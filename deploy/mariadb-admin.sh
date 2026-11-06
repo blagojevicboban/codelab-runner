@@ -2,9 +2,11 @@
 # Create the MariaDB user of the CodeLab runner (run as root on the runner's server). It may create, use and drop only
 # the databases and users of sessions, named cl_..., so it cannot touch other databases on the same server.
 #   sudo bash deploy/mariadb-admin.sh <password>
+# When MariaDB's root has a password (Virtualmin sets one):
+#   sudo MARIADB_ARGS='-u root -p' bash deploy/mariadb-admin.sh <password>
 set -euo pipefail
 PASSWORD="${1:?password}"
-sed "s/@@PASSWORD@@/${PASSWORD}/" <<'SQL' | mariadb
+sed "s/@@PASSWORD@@/${PASSWORD}/" <<'SQL' | mariadb ${MARIADB_ARGS:-}
 CREATE USER IF NOT EXISTS 'codelab_admin'@'localhost' IDENTIFIED BY '@@PASSWORD@@';
 ALTER USER 'codelab_admin'@'localhost' IDENTIFIED BY '@@PASSWORD@@';
 GRANT CREATE USER ON *.* TO 'codelab_admin'@'localhost';
