@@ -87,6 +87,14 @@ In Moodle, *Site administration > Plugins > Text editors > TinyMCE editor > Code
 server** (for example `wss://runner.example.org`) and **Secret of the interactive server**. The settings page shows
 whether the server answers.
 
+## Updates from GitHub (webhook)
+
+Set `CODELAB_DEPLOY_SECRET` and add a webhook to the repository (Settings > Webhooks): payload URL
+`https://<runner>/deploy`, content type `application/json`, the same secret, only the push event. On a push to
+`CODELAB_DEPLOY_BRANCH` (main) the runner runs `git pull --ff-only && npm ci --omit=dev` in its folder, waits until the
+open sessions end (at most `CODELAB_DEPLOY_WAIT`, 60 s) and exits; systemd (`Restart=on-failure`) starts the new
+version. The folder must belong to the user `codelab`. Without the secret `/deploy` answers 404.
+
 ## Settings (environment)
 
 | Variable | Default | |

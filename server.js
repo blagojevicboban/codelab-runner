@@ -13,7 +13,7 @@
  * Environment: CODELAB_PORT (8090), CODELAB_HOST (127.0.0.1, put a TLS proxy in front), CODELAB_SECRET,
  * CODELAB_ORIGINS (allowed Origin headers, comma separated; empty allows any), CODELAB_MAX_SESSIONS (30),
  * CODELAB_USER_SESSIONS (2), CODELAB_CPU_SECONDS (10), CODELAB_WALL_SECONDS (300), CODELAB_MAX_OUTPUT (100000),
- * CODELAB_NPROC (0: off), CODELAB_TMP.
+ * CODELAB_NPROC (0: off), CODELAB_TMP, CODELAB_DEPLOY_SECRET (GitHub webhook, POST /deploy), CODELAB_DEPLOY_BRANCH (main).
  *
  * GET /health answers {ok, sessions, languages}; WebSocket /session?token=... opens a session (see lib/session.js).
  *
@@ -27,6 +27,7 @@ import {mysqlConfigured} from './lib/mysql.js';
 import {Session} from './lib/session.js';
 import {TokenChecker} from './lib/token.js';
 import {runBatch, signedRequest} from './lib/batch.js';
+import {handleDeploy} from './lib/deploy.js';
 
 /**
  * Start the server.
@@ -35,9 +36,10 @@ import {runBatch, signedRequest} from './lib/batch.js';
  * @param {number} [options.port]
  * @param {string} [options.host]
  * @param {string} [options.secret]
+ * @param {function(): void} [options.exit] how a webhook update ends the process (default: exit, systemd restarts)
  * @returns {Promise<import('node:http').Server>}
  */
-export const startServer = ({port, host, secret} = {}) => {
+export const startServer = ({port, host, secret, exit = () => process.exit(75)} = {}) => {
     const theSecret = secret ?? process.env.CODELAB_SECRET;
     const checker = new TokenChecker(theSecret);
     const origins = (process.env.CODELAB_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
@@ -52,6 +54,22 @@ export const startServer = ({port, host, secret} = {}) => {
             res.writeHead(200, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'});
             const languages = Object.keys(LANGUAGES).filter((lang) => lang !== 'mysql' || mysqlConfigured());
             res.end(JSON.stringify({ok: true, sessions: total, languages}));
+            return;
+        }
+        if (req.method === 'POST' && req.url === '/deploy') {
+            // GitHub webhook: pull the new version and restart (lib/deploy.js).
+            let body = '';
+            req.on('data', (chunk) => {
+                body += chunk;
+                if (body.length > 1000000) {
+                    req.destroy();
+                }
+            });
+            req.on('end', async() => {
+                const {code, text} = await handleDeploy({headers: req.headers, body}, {sessions: () => total, exit});
+                res.writeHead(code, {'Content-Type': 'text/plain'});
+                res.end(text);
+            });
             return;
         }
         if (req.method === 'POST' && req.url === '/run') {
