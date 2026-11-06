@@ -11,6 +11,9 @@ WorkingDirectory=/opt/codelab-runner/app
 EnvironmentFile=/etc/codelab-runner.env
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
+# The webhook (POST /deploy) ends the process with 75 after an update: a normal end, restart at once.
+SuccessExitStatus=75
+RestartForceExitStatus=75
 LimitNOFILE=4096
 
 [Install]
