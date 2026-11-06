@@ -1,6 +1,6 @@
 {
   "name": "codelab-runner",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Interactive server of the CodeLab plugins for Moodle: runs C, C++, Java and C# programs in a sandbox while the student types the input.",
   "type": "module",
   "main": "server.js",

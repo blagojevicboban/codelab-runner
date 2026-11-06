@@ -3,7 +3,8 @@
 The interactive server of the CodeLab plugins for Moodle ([tiny_codelab](https://github.com/blagojevicboban/moodle-tiny_codelab),
 filter_codelab, qtype_codelab). It keeps a student's **C, C++, Java or C#** program running while the student types its
 input in the browser console, as in a terminal: prompts appear before the input, and a program can read until the end
-of the input (Ctrl+D).
+of the input (Ctrl+D). C and C++ programs can also run **step by step** under gdb: the browser marks the line that runs
+next and shows the variables of the function.
 
 It does not grade. Questions are still graded on [Jobe](https://github.com/trampgeek/jobe); this server is only for
 **Run** in examples, in the editor dialog and in the attempt of a question. Python runs in the browser (Pyodide).
@@ -26,10 +27,10 @@ Visual Studio safe functions, javac, mcs/mono), so the output is the same as in 
 - Linux with unprivileged user namespaces (Ubuntu 24.04 tested, also WSL 2)
 - Node.js 20 or newer
 - `bubblewrap`, `build-essential`, `openjdk-21-jdk-headless`, `mono-mcs` (the versions of Jobe on Ubuntu 24.04:
-  gcc 13.3, Java 21, Mono 6.8)
+  gcc 13.3, Java 21, Mono 6.8), and `gdb` for step by step
 
 ```sh
-sudo apt-get install bubblewrap build-essential openjdk-21-jdk-headless mono-mcs
+sudo apt-get install bubblewrap build-essential openjdk-21-jdk-headless mono-mcs gdb
 ```
 
 ## Install
@@ -88,11 +89,17 @@ Each open session is one compiled program and one process (a JVM for Java, Mono 
 
 ## Messages (WebSocket, JSON)
 
-Client to server: `{type: "start", lang, code, stdin}`, `{type: "stdin", data}`, `{type: "eof"}`, `{type: "stop"}`.
+Client to server: `{type: "start", lang, code, stdin, debug}`, `{type: "stdin", data}`, `{type: "eof"}`,
+`{type: "stop"}`; while paused in step mode (`debug: true`, C and C++): `{type: "step"}`, `{type: "continue"}`.
 
 Server to client: `{type: "compiling"}`, `{type: "compile", ok: false, output}`, `{type: "running"}`,
-`{type: "out", data}`, `{type: "err", data}`, `{type: "exit", status, code, signal}` (status `ok`, `runtime`, `time`,
+`{type: "out", data}`, `{type: "err", data}`, `{type: "paused", line, func, vars: [{name, value}]}`,
+`{type: "exit", status, code, signal}` (status `ok`, `runtime`, `time`,
 `memory`, `toolong` or `stopped`), `{type: "error", message}`.
+
+In step mode the program is compiled with `-g -O0` and runs under `gdb --interpreter=mi3`; its input and output go
+through FIFOs in its folder. A step that goes into the C library (printf, scanf) returns to the student's code at once,
+so only the student's lines are shown. `CODELAB_DEBUG_MI=1` prints gdb's machine interface on the server's stderr.
 
 ## Tests
 
