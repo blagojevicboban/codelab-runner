@@ -1,0 +1,19 @@
+{
+  "name": "codelab-runner",
+  "version": "0.1.0",
+  "description": "Interactive server of the CodeLab plugins for Moodle: runs C, C++, Java and C# programs in a sandbox while the student types the input.",
+  "type": "module",
+  "main": "server.js",
+  "license": "GPL-3.0-or-later",
+  "author": "Boban Blagojević",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "ws": "8.18.3"
+  }
+}

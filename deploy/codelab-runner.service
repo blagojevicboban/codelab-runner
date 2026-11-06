@@ -1,0 +1,19 @@
+# systemd unit of the CodeLab runner. Copy to /etc/systemd/system/ and run: systemctl enable --now codelab-runner
+[Unit]
+Description=CodeLab runner (interactive programs for the CodeLab plugins of Moodle)
+After=network.target
+
+[Service]
+User=codelab
+Group=codelab
+WorkingDirectory=/opt/codelab-runner/app
+ExecStart=/bin/sh -c 'CODELAB_SECRET="$(cat /etc/codelab-runner.secret)" exec /usr/bin/node server.js'
+Environment=CODELAB_HOST=127.0.0.1
+Environment=CODELAB_PORT=8090
+Environment=CODELAB_NPROC=200
+# Environment=CODELAB_ORIGINS=https://moodle.example.org
+Restart=on-failure
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
