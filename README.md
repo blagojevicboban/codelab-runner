@@ -42,6 +42,13 @@ Query OK, errors with their line). The database is dropped at the end. Create th
 `sudo bash deploy/mariadb-admin.sh <password>` and set `CODELAB_MYSQL_USER=codelab_admin`, `CODELAB_MYSQL_PASSWORD`
 and `CODELAB_MYSQL_SOCKET` (default `/run/mysqld/mysqld.sock`). Without them SQL is not offered.
 
+## Runs for grading
+
+`POST /run` with `{lang, code, stdin}` runs a program to its end and answers `{status, stdout, stderr, cmpinfo}`, as
+Jobe does. It is called by Moodle's server (tiny_codelab `runner_client`), not by browsers: the request carries
+`X-CodeLab-Time` and `X-CodeLab-Signature` = base64url(HMAC-SHA256(secret, time + "\n" + body)), valid for 60 seconds.
+qtype_codelab grades SQL questions with it; SQL output is then only the result tables (`--table`).
+
 ## Install
 
 ```sh

@@ -26,6 +26,7 @@ import {LANGUAGES} from './lib/sandbox.js';
 import {mysqlConfigured} from './lib/mysql.js';
 import {Session} from './lib/session.js';
 import {TokenChecker} from './lib/token.js';
+import {runBatch, signedRequest} from './lib/batch.js';
 
 /**
  * Start the server.
@@ -37,7 +38,8 @@ import {TokenChecker} from './lib/token.js';
  * @returns {Promise<import('node:http').Server>}
  */
 export const startServer = ({port, host, secret} = {}) => {
-    const checker = new TokenChecker(secret ?? process.env.CODELAB_SECRET);
+    const theSecret = secret ?? process.env.CODELAB_SECRET;
+    const checker = new TokenChecker(theSecret);
     const origins = (process.env.CODELAB_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
     const maxSessions = Number(process.env.CODELAB_MAX_SESSIONS || 30);
     const userSessions = Number(process.env.CODELAB_USER_SESSIONS || 2);
@@ -50,6 +52,41 @@ export const startServer = ({port, host, secret} = {}) => {
             res.writeHead(200, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'});
             const languages = Object.keys(LANGUAGES).filter((lang) => lang !== 'mysql' || mysqlConfigured());
             res.end(JSON.stringify({ok: true, sessions: total, languages}));
+            return;
+        }
+        if (req.method === 'POST' && req.url === '/run') {
+            // A run for grading, from Moodle's server (signed with the secret), not from a browser.
+            let body = '';
+            req.on('data', (chunk) => {
+                body += chunk;
+                if (body.length > 300000) {
+                    req.destroy();
+                }
+            });
+            req.on('end', async() => {
+                const reply = (code, data) => {
+                    res.writeHead(code, {'Content-Type': 'application/json'});
+                    res.end(JSON.stringify(data));
+                };
+                if (!signedRequest(theSecret, req.headers, body)) {
+                    return reply(401, {status: 'error', stderr: 'Unauthorized'});
+                }
+                if (total >= maxSessions) {
+                    return reply(200, {status: 'busy', stdout: '', stderr: '', cmpinfo: ''});
+                }
+                let request;
+                try {
+                    request = JSON.parse(body);
+                } catch {
+                    return reply(400, {status: 'error', stderr: 'Bad request'});
+                }
+                total++;
+                try {
+                    return reply(200, await runBatch(request));
+                } finally {
+                    total--;
+                }
+            });
             return;
         }
         res.writeHead(404);
