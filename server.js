@@ -23,6 +23,7 @@
 import {createServer} from 'node:http';
 import {WebSocketServer} from 'ws';
 import {LANGUAGES} from './lib/sandbox.js';
+import {mysqlConfigured} from './lib/mysql.js';
 import {Session} from './lib/session.js';
 import {TokenChecker} from './lib/token.js';
 
@@ -47,7 +48,8 @@ export const startServer = ({port, host, secret} = {}) => {
     const server = createServer((req, res) => {
         if (req.method === 'GET' && req.url === '/health') {
             res.writeHead(200, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'});
-            res.end(JSON.stringify({ok: true, sessions: total, languages: Object.keys(LANGUAGES)}));
+            const languages = Object.keys(LANGUAGES).filter((lang) => lang !== 'mysql' || mysqlConfigured());
+            res.end(JSON.stringify({ok: true, sessions: total, languages}));
             return;
         }
         res.writeHead(404);

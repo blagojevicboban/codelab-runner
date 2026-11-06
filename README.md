@@ -30,8 +30,17 @@ Visual Studio safe functions, javac, mcs/mono), so the output is the same as in 
   gcc 13.3, Java 21, Mono 6.8), and `gdb` for step by step
 
 ```sh
-sudo apt-get install bubblewrap build-essential openjdk-21-jdk-headless mono-mcs gdb
+sudo apt-get install bubblewrap build-essential openjdk-21-jdk-headless mono-mcs gdb mariadb-server
 ```
+
+## SQL (MySQL / MariaDB)
+
+With a MariaDB server on the same machine, `lang: "mysql"` runs SQL: each session gets a database and a user of its own
+(`cl_...`, only that database, `MAX_STATEMENT_TIME` 5 s, two connections), the optional `setup` (tables and data) runs
+first, then the code through the `mariadb` client in the sandbox, shown as by the client (`--table -vv`: tables,
+Query OK, errors with their line). The database is dropped at the end. Create the runner's MariaDB user with
+`sudo bash deploy/mariadb-admin.sh <password>` and set `CODELAB_MYSQL_USER=codelab_admin`, `CODELAB_MYSQL_PASSWORD`
+and `CODELAB_MYSQL_SOCKET` (default `/run/mysqld/mysqld.sock`). Without them SQL is not offered.
 
 ## Install
 
