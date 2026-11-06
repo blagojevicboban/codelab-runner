@@ -55,8 +55,10 @@ qtype_codelab grades SQL questions with it; SQL output is then only the result t
 sudo useradd --system --create-home --home-dir /opt/codelab-runner codelab
 sudo -u codelab git clone https://github.com/blagojevicboban/codelab-runner /opt/codelab-runner/app
 cd /opt/codelab-runner/app && sudo -u codelab npm ci --omit=dev
-# A long random secret; the same goes into the tiny_codelab settings.
-openssl rand -hex 24 | sudo tee /etc/codelab-runner.secret
+# Settings: a long random secret (the same goes into the tiny_codelab settings), the Moodle address, MariaDB.
+sudo cp deploy/codelab-runner.env.example /etc/codelab-runner.env
+sudo chown root:codelab /etc/codelab-runner.env && sudo chmod 640 /etc/codelab-runner.env
+sudo nano /etc/codelab-runner.env    # CODELAB_SECRET=$(openssl rand -hex 24), CODELAB_ORIGINS, MariaDB password
 sudo cp deploy/codelab-runner.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now codelab-runner
 ```
