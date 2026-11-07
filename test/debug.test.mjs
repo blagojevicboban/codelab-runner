@@ -36,11 +36,11 @@ after(() => server.close());
  * @param {string} [stdin]
  * @returns {Promise<{pauses: Object[], out: string, exit: Object}>}
  */
-const debug = (lang, code, onPause, stdin = '') => new Promise((resolve, reject) => {
+const debug = (lang, code, onPause, stdin = '', extra = {}) => new Promise((resolve, reject) => {
     const token = sign({u: 9, s: 'test', e: Math.floor(Date.now() / 1000) + 60, n: randomUUID()}, SECRET);
     const ws = new WebSocket(`${base}?token=${token}`);
     const result = {pauses: [], out: '', exit: undefined};
-    ws.onopen = () => ws.send(JSON.stringify({type: 'start', lang, code, stdin, debug: true}));
+    ws.onopen = () => ws.send(JSON.stringify({type: 'start', lang, code, stdin, debug: true, ...extra}));
     ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
         if (message.type === 'paused') {
@@ -76,7 +76,8 @@ const C = '#include <stdio.h>\n' +
 test('the MI parser reads records, tuples, lists and strings', () => {
     const r = parseRecord('*stopped,reason="end-stepping-range",frame={func="main",args=[],line="5"},x=["a","b\\"c"]');
     assert.deepEqual(r, {kind: '*', class: 'stopped',
-        data: {reason: 'end-stepping-range', frame: {func: 'main', args: [], line: '5'}, x: ['a', 'b"c']}});
+        data: {reason: 'end-stepping-range', frame: {func: 'main', args: [], line: '5'}, x: ['a', 'b"c']}, token: null});
+    assert.equal(parseRecord('12^done,stack=[frame={level="0",func="f"}]').token, 12);
     assert.deepEqual(parseRecord('^done,variables=[{name="a",value="2"}]').data.variables, [{name: 'a', value: '2'}]);
     assert.deepEqual(parseRecord('~"4\\t    int a = 2;\\n"'), {kind: '~', text: '4\t    int a = 2;\n'});
 });
@@ -126,4 +127,50 @@ test('a crash ends the run with the runtime status', async() => {
 test('Stop while paused', async() => {
     const r = await debug('c', C, () => [{type: 'stop'}]);
     assert.equal(r.exit.status, 'stopped');
+});
+
+const REC = '#include <stdio.h>\n' +
+    'int fact(int n)\n' +
+    '{\n' +
+    '    if (n <= 1) {\n' +
+    '        return 1;\n' +
+    '    }\n' +
+    '    return n * fact(n - 1);\n' +
+    '}\n' +
+    'int main(void)\n' +
+    '{\n' +
+    '    int r = fact(3);\n' +
+    '    printf("%d\\n", r);\n' +
+    '    return 0;\n' +
+    '}\n';
+
+test('Step over a call, and Step out of a function', async() => {
+    const over = await debug('c', C, (p) => [p.line === 10 ? {type: 'stdin', data: '4\n'} : null, {type: 'next'}].filter(Boolean));
+    assert.deepEqual(over.pauses.map((p) => `${p.func}:${p.line}`), ['main:7', 'main:9', 'main:10', 'main:11', 'main:12',
+        'main:13', 'main:14']);
+    assert.equal(over.out, 'a = b = 8\n');
+    // Into twice(), then out of it at once: back in main.
+    const out = await debug('c', C, (p) => [p.line === 10 ? {type: 'stdin', data: '4\n'} : null,
+        {type: p.func === 'twice' ? 'out' : 'step'}].filter(Boolean));
+    const trail = out.pauses.map((p) => `${p.func}:${p.line}`);
+    assert.deepEqual(trail.slice(trail.indexOf('twice:4')), ['twice:4', 'main:11', 'main:12', 'main:13', 'main:14']);
+});
+
+test('breakpoints: Run stops only there, with the call stack of a recursion', async() => {
+    const r = await debug('c', REC, () => [{type: 'continue'}], '', {step: false, breakpoints: [5]});
+    // fact(3) -> fact(2) -> fact(1): the breakpoint on "return 1" is reached once.
+    assert.equal(r.pauses.length, 1);
+    const p = r.pauses[0];
+    assert.equal(p.line, 5);
+    assert.deepEqual(p.stack.map((f) => `${f.func}:${f.line}`), ['fact:5', 'fact:7', 'fact:7', 'main:11']);
+    assert.deepEqual(p.stack.map((f) => f.vars.find((v) => v.name === 'n')?.value), ['1', '2', '3', undefined]);
+    assert.equal(r.out, '6\n');
+    assert.equal(r.exit.status, 'ok');
+});
+
+test('breakpoints changed while paused', async() => {
+    const r = await debug('c', REC, (p, n) => (n === 0 ? [{type: 'breakpoints', lines: [12]}, {type: 'continue'}]
+        : [{type: 'continue'}]), '', {step: false, breakpoints: [11]});
+    assert.deepEqual(r.pauses.map((p) => p.line), [11, 12]);
+    assert.equal(r.exit.status, 'ok');
 });

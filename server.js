@@ -149,6 +149,9 @@ export const startServer = ({port, host, secret, exit = () => process.exit(75)} 
                 (message) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(message)),
                 () => ws.close()
             );
+            // The messages of a session are handled in their order (new breakpoints before the Continue that follows);
+            // Stop at once.
+            let queue = Promise.resolve();
             ws.on('message', (data) => {
                 let message;
                 try {
@@ -156,7 +159,12 @@ export const startServer = ({port, host, secret, exit = () => process.exit(75)} 
                 } catch {
                     message = null;
                 }
-                session.handle(message).catch((e) => session.fail(e.message));
+                const handle = () => session.handle(message).catch((e) => session.fail(e.message));
+                if (message?.type === 'stop') {
+                    handle();
+                } else {
+                    queue = queue.then(handle);
+                }
             });
             ws.on('close', () => {
                 end();

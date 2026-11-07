@@ -115,11 +115,14 @@ Each open session is one compiled program and one process (a JVM for Java, Mono 
 
 ## Messages (WebSocket, JSON)
 
-Client to server: `{type: "start", lang, code, stdin, debug}`, `{type: "stdin", data}`, `{type: "eof"}`,
-`{type: "stop"}`; while paused in step mode (`debug: true`, C and C++): `{type: "step"}`, `{type: "continue"}`.
+Client to server: `{type: "start", lang, code, stdin, debug, step, breakpoints, setup}`, `{type: "stdin", data}`,
+`{type: "eof"}`, `{type: "stop"}`; with `debug: true` (C and C++): `{type: "breakpoints", lines}` at any time, and while
+paused `{type: "step"}` (into calls), `{type: "next"}` (over calls), `{type: "out"}` (out of the function),
+`{type: "continue"}` (to the next breakpoint or the end). With `step: false` the program stops only at breakpoints.
 
 Server to client: `{type: "compiling"}`, `{type: "compile", ok: false, output}`, `{type: "running"}`,
-`{type: "out", data}`, `{type: "err", data}`, `{type: "paused", line, func, vars: [{name, value}]}`,
+`{type: "out", data}`, `{type: "err", data}`, `{type: "paused", line, func, vars: [{name, value}], stack: [{func, line,
+vars}]}` (the student's frames, innermost first),
 `{type: "exit", status, code, signal}` (status `ok`, `runtime`, `time`,
 `memory`, `toolong` or `stopped`), `{type: "error", message}`.
 
