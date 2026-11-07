@@ -22,6 +22,9 @@ Without the server, every program runs on Jobe with the input given before the r
 The compilers and their options are the same as on the Jobe server of tiny_codelab (gcc/g++ with `-w`, `-lm` and the
 Visual Studio safe functions, javac, mcs/mono), so the output is the same as in grading.
 
+The [CodeLab manual](https://github.com/blagojevicboban/moodle-tiny_codelab/blob/main/docs/MANUAL.md) describes the runner from the Moodle side (settings, states, error
+messages).
+
 ## Requirements
 
 - Linux with unprivileged user namespaces (Ubuntu 24.04 tested, also WSL 2)
