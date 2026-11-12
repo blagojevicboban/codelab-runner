@@ -14,6 +14,7 @@ import {after, before, test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
 import {startServer} from '../server.js';
+import {deployCommand} from '../lib/deploy.js';
 
 const HOOK_SECRET = 'webhook-secret-for-tests';
 let server;
@@ -53,14 +54,32 @@ test('a wrong signature is refused', async() => {
     assert.equal((await hook('push', {ref: 'refs/heads/main'}, 'another-secret')).code, 401);
 });
 
-test('ping, and pushes to other branches, change nothing', async() => {
+test('ping, branch pushes and other tags change nothing', async() => {
     assert.deepEqual(await hook('ping', {zen: 'x'}), {code: 200, text: 'pong'});
-    const other = await hook('push', {ref: 'refs/heads/feature'});
-    assert.equal(other.code, 202);
+    assert.equal((await hook('push', {ref: 'refs/heads/main'})).code, 202);
+    assert.equal((await hook('push', {ref: 'refs/heads/feature'})).code, 202);
+    assert.equal((await hook('push', {ref: 'refs/tags/v1.0.0;rm -rf x'})).code, 202);
+    assert.equal((await hook('push', {ref: 'refs/tags/v1.0.0', deleted: true})).code, 202);
 });
 
-test('a push to main updates and restarts when no session is open', async() => {
-    const r = await hook('push', {ref: 'refs/heads/main'});
+test('the command verifies the signature of the tag and installs without scripts', () => {
+    const saved = process.env.CODELAB_DEPLOY_COMMAND;
+    delete process.env.CODELAB_DEPLOY_COMMAND;
+    try {
+        const command = deployCommand('push', {ref: 'refs/tags/v0.5.1'});
+        assert.match(command, /git verify-tag v0\.5\.1 && git checkout --detach v0\.5\.1 && npm ci --omit=dev --ignore-scripts$/);
+        assert.equal(deployCommand('push', {ref: 'refs/tags/latest'}), null);
+        process.env.CODELAB_DEPLOY_ON = 'branch';
+        assert.match(deployCommand('push', {ref: 'refs/heads/main'}), /^git pull --ff-only && npm ci .*--ignore-scripts$/);
+        assert.equal(deployCommand('push', {ref: 'refs/tags/v0.5.1'}), null);
+    } finally {
+        delete process.env.CODELAB_DEPLOY_ON;
+        process.env.CODELAB_DEPLOY_COMMAND = saved;
+    }
+});
+
+test('a signed release tag updates and restarts when no session is open', async() => {
+    const r = await hook('push', {ref: 'refs/tags/v9.9.9'});
     assert.equal(r.code, 200);
     assert.match(r.text, /Updated, restarting: pulled/);
     await exited;

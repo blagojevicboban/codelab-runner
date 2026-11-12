@@ -128,6 +128,32 @@ test('the sandbox has no network', async() => {
     assert.equal(r.out, 'none\n');
 });
 
+test('files of CODELAB_HIDE are empty for a program, /tmp is small', async() => {
+    const saved = process.env.CODELAB_HIDE;
+    // /etc/hostname (readable by everyone) stands for /etc/codelab-runner.env, which the runner's user can read.
+    process.env.CODELAB_HIDE = '/etc/hostname';
+    try {
+        const code = '#include <stdio.h>\nint main(void) { int c = EOF; FILE *f = fopen("/etc/hostname", "r");' +
+            ' if (f) c = fgetc(f); printf("first:%d\\n", c);' +
+            // Files of 8 MB (a file may have 16 MB, prlimit --fsize) until /tmp is full.
+            ' long n = 0; static char z[1 << 20]; char name[32]; int full = 0;' +
+            ' for (int i = 0; i < 25 && !full; i++) { sprintf(name, "/tmp/f%d", i); FILE *t = fopen(name, "w");' +
+            ' if (!t) break; for (int k = 0; k < 8; k++) { if (fwrite(z, 1, sizeof z, t) != sizeof z || fflush(t) != 0)' +
+            ' { full = 1; break; } n++; } fclose(t); }' +
+            ' printf("tmp:%ld\\n", n); return 0; }\n';
+        const r = await session('c', code);
+        assert.match(r.out, /first:-1\n/, r.out);
+        const mb = Number(/tmp:(\d+)/.exec(r.out)?.[1]);
+        assert.ok(mb >= 1 && mb <= 64, r.out);
+    } finally {
+        if (saved === undefined) {
+            delete process.env.CODELAB_HIDE;
+        } else {
+            process.env.CODELAB_HIDE = saved;
+        }
+    }
+});
+
 test('a token is used once, and a bad token is refused', async() => {
     const t = token();
     const first = new WebSocket(`${base}?token=${t}`);

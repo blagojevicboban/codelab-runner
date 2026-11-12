@@ -60,7 +60,8 @@ sudo -u codelab git clone https://github.com/blagojevicboban/codelab-runner /opt
 cd /opt/codelab-runner/app && sudo -u codelab npm ci --omit=dev
 # Settings: a long random secret (the same goes into the tiny_codelab settings), the Moodle address, MariaDB.
 sudo cp deploy/codelab-runner.env.example /etc/codelab-runner.env
-sudo chown root:codelab /etc/codelab-runner.env && sudo chmod 640 /etc/codelab-runner.env
+# Only root reads it: systemd passes the settings to the server, and the students' programs (same user) cannot.
+sudo chown root:root /etc/codelab-runner.env && sudo chmod 600 /etc/codelab-runner.env
 sudo nano /etc/codelab-runner.env    # CODELAB_SECRET=$(openssl rand -hex 24), CODELAB_ORIGINS, MariaDB password
 sudo cp deploy/codelab-runner.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now codelab-runner
@@ -90,13 +91,38 @@ In Moodle, *Site administration > Plugins > Text editors > TinyMCE editor > Code
 server** (for example `wss://runner.example.org`) and **Secret of the interactive server**. The settings page shows
 whether the server answers.
 
+## Security
+
+- The students' programs run as the server's user, so everything that user can read, a program can read too, except
+  what the sandbox leaves out: only `/usr`, `/etc` and the program's own folder are mounted, read-only. Keep
+  `/etc/codelab-runner.env` readable by root only (systemd reads it); the sandbox also covers it with an empty file
+  (`CODELAB_HIDE`, list of files, default `/etc/codelab-runner.env`). Put no other secrets readable by the user in `/etc`.
+- No capabilities, no network, `/tmp` of 64 MB (`CODELAB_TMP_MB`), prlimit limits per program, and limits for the whole
+  service in the systemd unit (`TasksMax`, `MemoryMax`, `NoNewPrivileges`). Needs bubblewrap 0.9 or newer.
+- Updates only from **signed release tags** (below), so that a stolen GitHub login or token cannot run code on the server.
+
 ## Updates from GitHub (webhook)
 
 Set `CODELAB_DEPLOY_SECRET` and add a webhook to the repository (Settings > Webhooks): payload URL
-`https://<runner>/deploy`, content type `application/json`, the same secret, only the push event. On a push to
-`CODELAB_DEPLOY_BRANCH` (main) the runner runs `git pull --ff-only && npm ci --omit=dev` in its folder, waits until the
-open sessions end (at most `CODELAB_DEPLOY_WAIT`, 60 s) and exits; systemd (`Restart=on-failure`) starts the new
-version. The folder must belong to the user `codelab`. Without the secret `/deploy` answers 404.
+`https://<runner>/deploy`, content type `application/json`, the same secret, only the push event. On a push of a release
+tag (`v1.2.3`) the runner runs `git fetch --tags && git verify-tag <tag> && git checkout --detach <tag> && npm ci
+--omit=dev --ignore-scripts` in its folder, waits until the open sessions end (at most `CODELAB_DEPLOY_WAIT`, 60 s) and
+exits; systemd starts the new version. Pushes to branches and unsigned tags change nothing. The folder must belong to
+the server's user. Without the secret `/deploy` answers 404.
+
+The tag is checked with the public key of the person who releases, e.g. an SSH signing key:
+
+```sh
+# On the developer's machine, once: sign tags with an SSH key (its public part is also added on GitHub as a signing key).
+git config --global gpg.format ssh && git config --global user.signingkey ~/.ssh/id_ed25519.pub
+git tag -s v0.5.1 -m "CodeLab runner 0.5.1" && git push origin v0.5.1
+# On the server, as the server's user, in the runner's folder: trust only that key.
+echo "you@example.org ssh-ed25519 AAAA..." > ~/.config/git/allowed_signers
+git config gpg.format ssh && git config gpg.ssh.allowedSignersFile ~/.config/git/allowed_signers
+```
+
+`CODELAB_DEPLOY_VERIFY=0` skips the check (not recommended); `CODELAB_DEPLOY_ON=branch` deploys every push to
+`CODELAB_DEPLOY_BRANCH` (main) as before 0.5.1.
 
 ## Settings (environment)
 
@@ -112,6 +138,9 @@ version. The folder must belong to the user `codelab`. Without the secret `/depl
 | `CODELAB_MAX_OUTPUT` | 100000 | bytes of output, then the program is stopped |
 | `CODELAB_NPROC` | off | process limit; counts every process of the user, so use it with the user `codelab` only |
 | `CODELAB_TMP` | system | folder for the programs during a session |
+| `CODELAB_TMP_MB` | 64 | size of the program's `/tmp` (memory) |
+| `CODELAB_HIDE` | `/etc/codelab-runner.env` | files a program sees empty, comma separated |
+| `CODELAB_DEPLOY_ON`, `CODELAB_DEPLOY_VERIFY` | tag, 1 | what the webhook deploys (see above) |
 
 Each open session is one compiled program and one process (a JVM for Java, Mono for C#). 30 students at once need about
 1 GB of memory for C and C++, more for Java and C#.

@@ -15,6 +15,11 @@ Restart=on-failure
 SuccessExitStatus=75
 RestartForceExitStatus=75
 LimitNOFILE=4096
+# Limits of the whole service (all programs together): no fork bomb or memory hog takes the server down.
+TasksMax=1024
+MemoryMax=4G
+NoNewPrivileges=yes
+PrivateTmp=yes
 
 [Install]
 WantedBy=multi-user.target
