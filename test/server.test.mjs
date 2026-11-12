@@ -12,7 +12,7 @@
  */
 import {after, before, test} from 'node:test';
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
+import {createHmac, randomUUID} from 'node:crypto';
 import {startServer} from '../server.js';
 import {sign} from '../lib/token.js';
 
@@ -41,8 +41,9 @@ const token = (extra = {}) => sign({u: 7, s: 'test', e: Math.floor(Date.now() / 
  * @param {boolean} [options.stop] stop the program after the first output
  * @returns {Promise<{out: string, err: string, messages: Object[], exit: Object|undefined}>}
  */
-const session = (lang, code, {lines = [], stdin = '', eof = false, stop = false} = {}) => new Promise((resolve, reject) => {
-    const ws = new WebSocket(`${base}?token=${token()}`);
+const session = (lang, code, {lines = [], stdin = '', eof = false, stop = false, grant = {}} = {}) =>
+    new Promise((resolve, reject) => {
+    const ws = new WebSocket(`${base}?token=${token(grant)}`);
     const result = {out: '', err: '', messages: [], exit: undefined};
     const pending = [...lines];
     ws.onopen = () => ws.send(JSON.stringify({type: 'start', lang, code, stdin}));
@@ -167,4 +168,26 @@ test('a token is used once, and a bad token is refused', async() => {
         });
         assert.equal(outcome, 'refused');
     }
+});
+
+test('a token for one language does not run another', async() => {
+    const code = '#include <stdio.h>\nint main(void) { printf("ok\\n"); return 0; }\n';
+    const wrong = await session('c', code, {grant: {l: 'cpp'}});
+    assert.equal(wrong.exit.type, 'error');
+    assert.equal(wrong.out, '');
+    const right = await session('c', code, {grant: {l: 'c'}});
+    assert.equal(right.out, 'ok\n');
+});
+
+test('/health shows the load only to a signed request', async() => {
+    const health = base.replace(/^ws/, 'http').replace(/\/session$/, '/health');
+    const open = await (await fetch(health)).json();
+    assert.equal(open.ok, true);
+    assert.equal(open.sessions, undefined);
+    const time = String(Math.floor(Date.now() / 1000));
+    const signature = createHmac('sha256', SECRET).update(`${time}
+`).digest('base64url');
+    const signed = await (await fetch(health, {headers: {'X-CodeLab-Time': time, 'X-CodeLab-Signature': signature}})).json();
+    assert.equal(typeof signed.sessions, 'number');
+    assert.match(signed.version, /^\d+\.\d+\.\d+$/);
 });

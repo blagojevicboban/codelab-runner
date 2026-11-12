@@ -13,7 +13,8 @@ Without the server, every program runs on Jobe with the input given before the r
 ## How it works
 
 1. The browser asks Moodle for a token (web service `tiny_codelab_session`). The token is signed with a secret shared by
-   Moodle and the server, holds the user, the site, a nonce and an expiry of 60 seconds, and opens one session only.
+   Moodle and the server, holds the user, the site, the language, a nonce and an expiry of 60 seconds, and opens one
+   session only, for that language (tiny_codelab 1.12; tokens without a language from older versions run any).
 2. The browser opens `wss://<server>/session?token=...` and sends the program.
 3. The server compiles the program and runs it in a [bubblewrap](https://github.com/containers/bubblewrap) sandbox: no
    network, a read-only system, a private `/tmp`, CPU time, memory and file size limits (`prlimit`). The output streams
@@ -49,8 +50,21 @@ and `CODELAB_MYSQL_SOCKET` (default `/run/mysqld/mysqld.sock`). Without them SQL
 
 `POST /run` with `{lang, code, stdin}` runs a program to its end and answers `{status, stdout, stderr, cmpinfo}`, as
 Jobe does. It is called by Moodle's server (tiny_codelab `runner_client`), not by browsers: the request carries
-`X-CodeLab-Time` and `X-CodeLab-Signature` = base64url(HMAC-SHA256(secret, time + "\n" + body)), valid for 60 seconds.
-qtype_codelab grades SQL questions with it; SQL output is then only the result tables (`--table`).
+`X-CodeLab-Site`, `X-CodeLab-Time`, `X-CodeLab-Nonce` and `X-CodeLab-Signature` = base64url(HMAC-SHA256(secret, time +
+"\n" + nonce + "\n" + body)), valid for 60 seconds and taken once (the nonce). Requests without a nonce (tiny_codelab older
+than 1.12) are signed as time + "\n" + body; `CODELAB_REQUIRE_NONCE=1` refuses them. qtype_codelab grades SQL questions
+with it; SQL output is then only the result tables (`--table`). Runs for grading have their own places
+(`CODELAB_BATCH_MAX`), so a regrade does not take the sessions of the students.
+
+## One server for several Moodle sites
+
+`CODELAB_SECRET` is the secret of every site. To give a site a secret of its own (an administrator of one site then
+cannot open sessions in the name of another), add it to `CODELAB_SECRETS` as `site:secret` pairs, comma separated. The
+site id is shown under the state of the interactive server in the tiny_codelab settings (the first 12 characters of
+sha1 of the site address). With only `CODELAB_SECRETS`, sites that are not listed are refused.
+
+`GET /health` answers `{ok, languages}`; a request signed like a run (empty body) also gets `version`, `sessions` and
+`runs`, which the settings page of tiny_codelab shows.
 
 ## Install
 
@@ -128,15 +142,18 @@ git config gpg.format ssh && git config gpg.ssh.allowedSignersFile ~/.config/git
 
 | Variable | Default | |
 |---|---|---|
-| `CODELAB_SECRET` | – | shared secret, at least 16 characters (required) |
+| `CODELAB_SECRET` | – | shared secret, at least 16 characters (this or `CODELAB_SECRETS` is required) |
+| `CODELAB_SECRETS` | – | `site:secret` pairs, comma separated: sites with a secret of their own |
+| `CODELAB_REQUIRE_NONCE` | 0 | 1: refuse runs for grading without a nonce (all sites on tiny_codelab 1.12 or newer) |
 | `CODELAB_PORT`, `CODELAB_HOST` | 8090, 127.0.0.1 | where the server listens |
 | `CODELAB_ORIGINS` | any | allowed `Origin` headers, comma separated, e.g. `https://moodle.example.org` |
 | `CODELAB_MAX_SESSIONS` | 30 | programs running at once on the server |
 | `CODELAB_USER_SESSIONS` | 2 | programs running at once for one user |
+| `CODELAB_BATCH_MAX` | 10 | runs for grading (`POST /run`) at once, beside the sessions |
 | `CODELAB_CPU_SECONDS` | 10 | CPU time of a program |
 | `CODELAB_WALL_SECONDS` | 300 | longest session, also while waiting for input |
 | `CODELAB_MAX_OUTPUT` | 100000 | bytes of output, then the program is stopped |
-| `CODELAB_NPROC` | off | process limit; counts every process of the user, so use it with the user `codelab` only |
+| `CODELAB_NPROC` | off | process limit; counts every process and thread of the user, so use it with the user `codelab` only. A JVM or Mono has 20 to 30 threads: allow about 40 per session (1200 for 30 sessions), or leave it off and rely on `TasksMax` of the systemd unit |
 | `CODELAB_TMP` | system | folder for the programs during a session |
 | `CODELAB_TMP_MB` | 64 | size of the program's `/tmp` (memory) |
 | `CODELAB_HIDE` | `/etc/codelab-runner.env` | files a program sees empty, comma separated |

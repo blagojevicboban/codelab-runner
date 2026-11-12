@@ -12,7 +12,7 @@
  */
 import {after, before, test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createHmac} from 'node:crypto';
+import {createHmac, randomBytes} from 'node:crypto';
 import {startServer} from '../server.js';
 
 const SECRET = 'test-secret-of-sixteen-or-more';
@@ -30,14 +30,15 @@ after(() => server.close());
  *
  * @param {Object} request
  * @param {string} [secret]
+ * @param {string} [nonce]
  * @returns {Promise<{code: number, data: Object}>}
  */
-const post = async(request, secret = SECRET) => {
+const post = async(request, secret = SECRET, nonce = randomBytes(12).toString('base64url')) => {
     const body = JSON.stringify(request);
     const time = String(Math.floor(Date.now() / 1000));
-    const signature = createHmac('sha256', secret).update(`${time}\n${body}`).digest('base64url');
-    const res = await fetch(url, {method: 'POST', body,
-        headers: {'Content-Type': 'application/json', 'X-CodeLab-Time': time, 'X-CodeLab-Signature': signature}});
+    const signature = createHmac('sha256', secret).update(`${time}\n${nonce}\n${body}`).digest('base64url');
+    const res = await fetch(url, {method: 'POST', body, headers: {'Content-Type': 'application/json', 'X-CodeLab-Time': time,
+        'X-CodeLab-Nonce': nonce, 'X-CodeLab-Signature': signature}});
     return {code: res.status, data: await res.json()};
 };
 
@@ -65,4 +66,12 @@ test('SQL gives only the tables, in a database of its own', {skip: !process.env.
 test('a request without the right signature is refused', async() => {
     const r = await post({lang: 'c', code: 'int main(void) { return 0; }'}, 'another-secret-of-sixteen');
     assert.equal(r.code, 401);
+});
+
+test('a request sent again is refused', async() => {
+    const request = {lang: 'c', code: 'int main(void) { return 0; }'};
+    const first = await post(request, SECRET, 'the-same-nonce-0001');
+    assert.equal(first.code, 200);
+    const again = await post(request, SECRET, 'the-same-nonce-0001');
+    assert.equal(again.code, 401);
 });

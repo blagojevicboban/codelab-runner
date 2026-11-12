@@ -11,23 +11,29 @@
  *   CODELAB_SECRET=<the secret of the tiny_codelab settings> node server.js
  *
  * Environment: CODELAB_PORT (8090), CODELAB_HOST (127.0.0.1, put a TLS proxy in front), CODELAB_SECRET,
- * CODELAB_ORIGINS (allowed Origin headers, comma separated; empty allows any), CODELAB_MAX_SESSIONS (30),
- * CODELAB_USER_SESSIONS (2), CODELAB_CPU_SECONDS (10), CODELAB_WALL_SECONDS (300), CODELAB_MAX_OUTPUT (100000),
- * CODELAB_NPROC (0: off), CODELAB_TMP, CODELAB_DEPLOY_SECRET (GitHub webhook, POST /deploy), CODELAB_DEPLOY_BRANCH (main).
+ * CODELAB_SECRETS (site:secret pairs, see lib/token.js), CODELAB_ORIGINS (allowed Origin headers, comma separated; empty
+ * allows any), CODELAB_MAX_SESSIONS (30), CODELAB_USER_SESSIONS (2), CODELAB_BATCH_MAX (10 runs for grading at a time,
+ * beside the sessions), CODELAB_CPU_SECONDS (10), CODELAB_WALL_SECONDS (300), CODELAB_MAX_OUTPUT (100000),
+ * CODELAB_NPROC (0: off), CODELAB_TMP, CODELAB_REQUIRE_NONCE, CODELAB_DEPLOY_SECRET (GitHub webhook, POST /deploy).
  *
- * GET /health answers {ok, sessions, languages}; WebSocket /session?token=... opens a session (see lib/session.js).
+ * GET /health answers {ok, languages}, and with a signed request (as POST /run, empty body) also the version and the
+ * numbers of sessions and runs; WebSocket /session?token=... opens a session (see lib/session.js).
  *
  * @copyright  2026 Boban Blagojević
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+import {readFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {WebSocketServer} from 'ws';
 import {LANGUAGES} from './lib/sandbox.js';
 import {mysqlConfigured} from './lib/mysql.js';
 import {Session} from './lib/session.js';
-import {TokenChecker} from './lib/token.js';
+import {NonceList, Secrets, TokenChecker} from './lib/token.js';
 import {runBatch, signedRequest} from './lib/batch.js';
 import {handleDeploy} from './lib/deploy.js';
+
+/** Version of the runner (package.json). */
+const VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
 
 /**
  * Start the server.
@@ -35,16 +41,20 @@ import {handleDeploy} from './lib/deploy.js';
  * @param {Object} [options]
  * @param {number} [options.port]
  * @param {string} [options.host]
- * @param {string} [options.secret]
+ * @param {string} [options.secret] the secret of every site (default CODELAB_SECRET)
+ * @param {string} [options.secrets] site:secret pairs (default CODELAB_SECRETS)
  * @param {function(): void} [options.exit] how a webhook update ends the process (default: exit, systemd restarts)
  * @returns {Promise<import('node:http').Server>}
  */
-export const startServer = ({port, host, secret, exit = () => process.exit(75)} = {}) => {
-    const theSecret = secret ?? process.env.CODELAB_SECRET;
-    const checker = new TokenChecker(theSecret);
+export const startServer = ({port, host, secret, secrets, exit = () => process.exit(75)} = {}) => {
+    const theSecrets = new Secrets(secret ?? process.env.CODELAB_SECRET, secrets ?? process.env.CODELAB_SECRETS);
+    const checker = new TokenChecker(theSecrets);
+    const runNonces = new NonceList();
     const origins = (process.env.CODELAB_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
     const maxSessions = Number(process.env.CODELAB_MAX_SESSIONS || 30);
     const userSessions = Number(process.env.CODELAB_USER_SESSIONS || 2);
+    const batchMax = Number(process.env.CODELAB_BATCH_MAX || 10);
+    let batches = 0;
     /** @type {Map<string, number>} open sessions by site and user */
     const open = new Map();
     let total = 0;
@@ -53,7 +63,10 @@ export const startServer = ({port, host, secret, exit = () => process.exit(75)} 
         if (req.method === 'GET' && req.url === '/health') {
             res.writeHead(200, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'});
             const languages = Object.keys(LANGUAGES).filter((lang) => lang !== 'mysql' || mysqlConfigured());
-            res.end(JSON.stringify({ok: true, sessions: total, languages}));
+            // The load of the server only for Moodle (signed like a run), not for anyone who asks.
+            const signed = signedRequest(theSecrets, req.headers, '');
+            res.end(JSON.stringify(signed ? {ok: true, languages, version: VERSION, sessions: total, runs: batches}
+                : {ok: true, languages}));
             return;
         }
         if (req.method === 'POST' && req.url === '/deploy') {
@@ -86,10 +99,11 @@ export const startServer = ({port, host, secret, exit = () => process.exit(75)} 
                     res.writeHead(code, {'Content-Type': 'application/json'});
                     res.end(JSON.stringify(data));
                 };
-                if (!signedRequest(theSecret, req.headers, body)) {
+                if (!signedRequest(theSecrets, req.headers, body, runNonces)) {
                     return reply(401, {status: 'error', stderr: 'Unauthorized'});
                 }
-                if (total >= maxSessions) {
+                // Runs for grading have their own places: a regrade does not take the students' sessions.
+                if (batches >= batchMax) {
                     return reply(200, {status: 'busy', stdout: '', stderr: '', cmpinfo: ''});
                 }
                 let request;
@@ -98,11 +112,11 @@ export const startServer = ({port, host, secret, exit = () => process.exit(75)} 
                 } catch {
                     return reply(400, {status: 'error', stderr: 'Bad request'});
                 }
-                total++;
+                batches++;
                 try {
                     return reply(200, await runBatch(request));
                 } finally {
-                    total--;
+                    batches--;
                 }
             });
             return;
@@ -147,7 +161,8 @@ export const startServer = ({port, host, secret, exit = () => process.exit(75)} 
             };
             const session = new Session(
                 (message) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(message)),
-                () => ws.close()
+                () => ws.close(),
+                {lang: typeof payload.l === 'string' ? payload.l : null}
             );
             // The messages of a session are handled in their order (new breakpoints before the Continue that follows);
             // Stop at once.
