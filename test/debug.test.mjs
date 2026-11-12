@@ -12,11 +12,14 @@
  */
 import {after, before, test} from 'node:test';
 import assert from 'node:assert/strict';
+import {WebSocket as WsClient} from 'ws';
 import {randomUUID} from 'node:crypto';
 import {startServer} from '../server.js';
 import {sign} from '../lib/token.js';
 import {parseRecord} from '../lib/mi.js';
 
+// Node 20 has no WebSocket client of its own.
+const WebSocket = globalThis.WebSocket ?? WsClient;
 const SECRET = 'test-secret-of-sixteen-or-more';
 let server;
 let base;
