@@ -1,0 +1,38 @@
+# Tests of the CodeLab runner with real programs in the bubblewrap sandbox: C, C++ (also under gdb), Java, C#, and SQL on
+# MariaDB, on Ubuntu 24.04 like the production server.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Compilers, gdb, bubblewrap and MariaDB
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap build-essential gdb openjdk-21-jdk-headless mono-mcs \
+            mariadb-server mariadb-client
+          # Ubuntu 24.04 allows unprivileged user namespaces (bubblewrap) only with an AppArmor profile.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo systemctl start mariadb
+          sudo bash deploy/mariadb-admin.sh ci-password-of-the-runner >/dev/null
+      - run: npm ci
+      - name: Tests
+        env:
+          CODELAB_MYSQL_PASSWORD: ci-password-of-the-runner
+        run: npm test

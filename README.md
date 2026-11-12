@@ -129,7 +129,7 @@ The tag is checked with the public key of the person who releases, e.g. an SSH s
 ```sh
 # On the developer's machine, once: sign tags with an SSH key (its public part is also added on GitHub as a signing key).
 git config --global gpg.format ssh && git config --global user.signingkey ~/.ssh/id_ed25519.pub
-git tag -s v0.5.1 -m "CodeLab runner 0.5.1" && git push origin v0.5.1
+git tag -s v0.6.0 -m "CodeLab runner 0.6.0" && git push origin v0.6.0
 # On the server, as the server's user, in the runner's folder: trust only that key.
 echo "you@example.org ssh-ed25519 AAAA..." > ~/.config/git/allowed_signers
 git config gpg.format ssh && git config gpg.ssh.allowedSignersFile ~/.config/git/allowed_signers
