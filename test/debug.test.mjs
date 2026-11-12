@@ -174,3 +174,57 @@ test('breakpoints changed while paused', async() => {
     assert.deepEqual(r.pauses.map((p) => p.line), [11, 12]);
     assert.equal(r.exit.status, 'ok');
 });
+
+test('pointer fields of a structure value, at its own level', async() => {
+    const {pointerFields} = await import('../lib/session.js');
+    assert.deepEqual(pointerFields('{data = 1, next = 0x5555, name = "a, b = 0x1", in = {p = 0x9}}'), [['next', '0x5555']]);
+    assert.deepEqual(pointerFields('{x = 1}'), []);
+    assert.deepEqual(pointerFields('0x10'), []);
+});
+
+test('the memory view: addresses of the variables and what the pointers point to', async() => {
+    const code = '#include <stdio.h>\n#include <stdlib.h>\n' +
+        'struct node { int data; struct node *next; };\n' +
+        'int main(void)\n' +
+        '{\n' +
+        '    int a[4] = {5, 6, 7, 8};\n' +
+        '    int x = 3;\n' +
+        '    int *p = &a[2];\n' +
+        '    int *q = &x;\n' +
+        '    struct node *head = NULL;\n' +
+        '    for (int i = 1; i <= 3; i++) {\n' +
+        '        struct node *n = malloc(sizeof *n);\n' +
+        '        n->data = i;\n' +
+        '        n->next = head;\n' +
+        '        head = n;\n' +
+        '    }\n' +
+        '    printf("%d %d %d\\n", *p, *q, head->data);\n' +
+        '    return 0;\n' +
+        '}\n';
+    const r = await debug('c', code, (pause) => [{type: pause.line === 17 ? 'continue' : 'next'}],
+        '', {breakpoints: [17], step: false});
+    assert.equal(r.out, '7 3 3\n', JSON.stringify({exit: r.exit, pauses: r.pauses.map((p) => [p.line, p.targets])}));
+    const stop = r.pauses.find((p) => p.line === 17);
+    assert.ok(stop, JSON.stringify(r.pauses.map((p) => p.line)));
+    const main = stop.stack[0];
+    const value = (name) => main.vars.find((v) => v.name === name).value;
+    const [aAddr, aSize, aElem] = main.addrs.a;
+    assert.equal(aSize, 16);
+    assert.equal(aElem, 4);
+    // p points to a[2], q to x: inside the variables, so not among the targets.
+    assert.equal(Number.parseInt(value('p'), 16), aAddr + 2 * aElem);
+    assert.equal(Number.parseInt(value('q'), 16), main.addrs.x[0]);
+    // head -> 3 -> 2 -> 1 -> NULL on the heap.
+    const first = stop.targets[value('head')];
+    assert.match(first, /^\{data = 3, next = 0x[0-9a-f]+\}$/);
+    const second = stop.targets[/next = (0x[0-9a-f]+)/.exec(first)[1]];
+    assert.match(second, /^\{data = 2, /);
+    const third = stop.targets[/next = (0x[0-9a-f]+)/.exec(second)[1]];
+    assert.equal(third, '{data = 1, next = 0x0}');
+});
+
+test('no memory data without pointers', async() => {
+    const r = await debug('c', C, (pause) => [{type: 'next'}], '4\n');
+    assert.ok(r.pauses.length > 0);
+    assert.ok(r.pauses.every((p) => p.targets === undefined && p.stack.every((f) => f.addrs === undefined)));
+});
