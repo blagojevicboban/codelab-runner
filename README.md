@@ -156,6 +156,8 @@ git config gpg.format ssh && git config gpg.ssh.allowedSignersFile ~/.config/git
 | `CODELAB_NPROC` | off | process limit; counts every process and thread of the user, so use it with the user `codelab` only. A JVM or Mono has 20 to 30 threads: allow about 40 per session (1200 for 30 sessions), or leave it off and rely on `TasksMax` of the systemd unit |
 | `CODELAB_TMP` | system | folder for the programs during a session |
 | `CODELAB_TMP_MB` | 64 | size of the program's `/tmp` (memory) |
+| `CODELAB_CACHE_MB` | 200 | cache of compiled programs (the same example run by many students is compiled once); 0 turns it off |
+| `CODELAB_CACHE` | `codelab-cache` in `CODELAB_TMP` | folder of the cache (outside the sandbox; oldest entries go first) |
 | `CODELAB_HIDE` | `/etc/codelab-runner.env` | files a program sees empty, comma separated |
 | `CODELAB_DEPLOY_ON`, `CODELAB_DEPLOY_VERIFY` | tag, 1 | what the webhook deploys (see above) |
 
