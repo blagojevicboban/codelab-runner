@@ -14,7 +14,8 @@
  * CODELAB_SECRETS (site:secret pairs, see lib/token.js), CODELAB_ORIGINS (allowed Origin headers, comma separated; empty
  * allows any), CODELAB_MAX_SESSIONS (30), CODELAB_USER_SESSIONS (2), CODELAB_BATCH_MAX (10 runs for grading at a time,
  * beside the sessions), CODELAB_CPU_SECONDS (10), CODELAB_WALL_SECONDS (300), CODELAB_MAX_OUTPUT (100000),
- * CODELAB_NPROC (0: off), CODELAB_TMP, CODELAB_REQUIRE_NONCE, CODELAB_DEPLOY_SECRET (GitHub webhook, POST /deploy).
+ * CODELAB_NPROC (0: off), CODELAB_TMP, CODELAB_REQUIRE_NONCE, CODELAB_DEPLOY_SECRET (GitHub webhook, POST /deploy),
+ * CODELAB_BATCH_WAIT (30 s a run for grading waits for a place), CODELAB_BATCH_SITE_MAX (places of one site).
  *
  * GET /health answers {ok, languages}, and with a signed request (as POST /run, empty body) also the version and the
  * numbers of sessions and runs; WebSocket /session?token=... opens a session (see lib/session.js).
@@ -25,10 +26,11 @@
 import {readFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {WebSocketServer} from 'ws';
-import {LANGUAGES, languageAvailable} from './lib/sandbox.js';
+import {LANGUAGES, languageAvailable, languageVersions} from './lib/sandbox.js';
 import {mysqlConfigured} from './lib/mysql.js';
 import {Session} from './lib/session.js';
 import {NonceList, Secrets, TokenChecker} from './lib/token.js';
+import {BatchQueue} from './lib/queue.js';
 import {runBatch, signedRequest} from './lib/batch.js';
 import {handleDeploy} from './lib/deploy.js';
 
@@ -61,21 +63,24 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
     const maxSessions = Number(process.env.CODELAB_MAX_SESSIONS || 30);
     const userSessions = Number(process.env.CODELAB_USER_SESSIONS || 2);
     const batchMax = Number(process.env.CODELAB_BATCH_MAX || 10);
-    let batches = 0;
+    const queue = new BatchQueue({max: batchMax, siteMax: Number(process.env.CODELAB_BATCH_SITE_MAX || batchMax),
+        waitMs: Number(process.env.CODELAB_BATCH_WAIT ?? 30) * 1000});
     /** @type {Map<string, number>} open sessions by site and user */
     const open = new Map();
     /** @type {Map<string, number>} open sessions by site */
     const siteOpen = new Map();
     let total = 0;
 
-    const server = createServer((req, res) => {
+    const server = createServer(async(req, res) => {
         if (req.method === 'GET' && req.url === '/health') {
-            res.writeHead(200, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'});
             const languages = Object.keys(LANGUAGES).filter((lang) =>
                 languageAvailable(lang) && (lang !== 'mysql' || mysqlConfigured()));
-            // The load of the server only for Moodle (signed like a run), not for anyone who asks.
+            // The load of the server and the versions only for Moodle (signed like a run), not for anyone who asks.
             const signed = signedRequest(theSecrets, req.headers, '');
-            res.end(JSON.stringify(signed ? {ok: true, languages, version: VERSION, sessions: total, runs: batches}
+            const all = signed ? await languageVersions() : {};
+            res.writeHead(200, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'});
+            res.end(JSON.stringify(signed ? {ok: true, languages, version: VERSION, sessions: total, runs: queue.running,
+                queued: queue.queued, versions: Object.fromEntries(languages.map((lang) => [lang, all[lang] || '']))}
                 : {ok: true, languages}));
             return;
         }
@@ -119,22 +124,25 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
                         return reply(auth.code || 200, {status: auth.reason || 'quota', stdout: '', stderr: '', cmpinfo: ''});
                     }
                 }
-                // Runs for grading have their own places: a regrade does not take the students' sessions.
-                if (batches >= batchMax) {
-                    return reply(200, {status: 'busy', stdout: '', stderr: '', cmpinfo: ''});
-                }
                 let request;
                 try {
                     request = JSON.parse(body);
                 } catch {
                     return reply(400, {status: 'error', stderr: 'Bad request'});
                 }
+                // Runs for grading have their own places: a regrade does not take the students' sessions. When all
+                // are taken, the run waits its site's turn (lib/queue.js), and only then is refused as busy.
+                const gone = new AbortController();
+                res.on('close', () => gone.abort());
+                const release = await queue.acquire(site, gone.signal);
+                if (!release) {
+                    return gone.signal.aborted ? undefined : reply(200, {status: 'busy', stdout: '', stderr: '', cmpinfo: ''});
+                }
                 onRun?.({type: 'batch', site});
-                batches++;
                 try {
                     return reply(200, await runBatch(request));
                 } finally {
-                    batches--;
+                    release();
                 }
             });
             return;

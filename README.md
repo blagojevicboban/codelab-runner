@@ -58,7 +58,10 @@ and JavaScript, whose heaps have their own limits) are the limits of a question.
 "\n" + nonce + "\n" + body)), valid for 60 seconds and taken once (the nonce). Requests without a nonce (tiny_codelab older
 than 1.12) are signed as time + "\n" + body; `CODELAB_REQUIRE_NONCE=1` refuses them. qtype_codelab grades SQL questions
 with it; SQL output is then only the result tables (`--table`). Runs for grading have their own places
-(`CODELAB_BATCH_MAX`), so a regrade does not take the sessions of the students.
+(`CODELAB_BATCH_MAX`), so a regrade does not take the sessions of the students. When they are all taken, a run waits
+for a place (`CODELAB_BATCH_WAIT`); the places go to the site with the fewest runs going on, so a regrade of hundreds
+of runs on one site does not hold up a single run of another. A program that ends for lack of memory gets the status
+`memory` (here and in sessions).
 
 ## One server for several Moodle sites
 
@@ -67,8 +70,8 @@ cannot open sessions in the name of another), add it to `CODELAB_SECRETS` as `si
 site id is shown under the state of the interactive server in the tiny_codelab settings (the first 12 characters of
 sha1 of the site address). With only `CODELAB_SECRETS`, sites that are not listed are refused.
 
-`GET /health` answers `{ok, languages}` (the languages installed on the server); a request signed like a run (empty body) also gets `version`, `sessions` and
-`runs`, which the settings page of tiny_codelab shows.
+`GET /health` answers `{ok, languages}` (the languages installed on the server); a request signed like a run (empty body) also gets `version`, `sessions`,
+`runs`, `queued` and the `versions` of the languages (as Jobe gives them), which the settings page of tiny_codelab shows.
 
 ## Building on the server (hooks)
 
@@ -163,6 +166,8 @@ git config gpg.format ssh && git config gpg.ssh.allowedSignersFile ~/.config/git
 | `CODELAB_MAX_SESSIONS` | 30 | programs running at once on the server |
 | `CODELAB_USER_SESSIONS` | 2 | programs running at once for one user |
 | `CODELAB_BATCH_MAX` | 10 | runs for grading (`POST /run`) at once, beside the sessions |
+| `CODELAB_BATCH_WAIT` | 30 | seconds a run for grading waits for a place before it is answered `busy` (0: no waiting) |
+| `CODELAB_BATCH_SITE_MAX` | `CODELAB_BATCH_MAX` | places of one site, so that a regrade on one site leaves places for the others |
 | `CODELAB_CPU_SECONDS` | 10 | CPU time of a program |
 | `CODELAB_WALL_SECONDS` | 300 | longest session, also while waiting for input |
 | `CODELAB_MAX_OUTPUT` | 100000 | bytes of output, then the program is stopped |

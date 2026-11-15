@@ -156,3 +156,26 @@ test('per-request cputime limits an endless loop', async() => {
     const r = await post({lang: 'c', code: 'int main(void) { for (;;) {} }', cputime: 1});
     assert.equal(r.data.status, 'time');
 });
+
+test('a program out of memory gets the status memory', async() => {
+    const py = await post({lang: 'python', code: 'a = []\nwhile True:\n    a.append(bytearray(10 ** 7))\n', memory: 64});
+    assert.equal(py.data.status, 'memory');
+    const cpp = await post({lang: 'cpp', code: '#include <vector>\nint main() { std::vector<std::vector<char>> v; ' +
+        'for (;;) v.emplace_back(10000000, 1); }', memory: 64});
+    assert.equal(cpp.data.status, 'memory');
+});
+
+test('a signed /health has the versions of the languages', async() => {
+    const time = String(Math.floor(Date.now() / 1000));
+    const nonce = randomBytes(12).toString('base64url');
+    const signature = createHmac('sha256', SECRET).update(`${time}\n${nonce}\n`).digest('base64url');
+    const res = await fetch(url.replace('/run', '/health'), {headers: {'X-CodeLab-Time': time, 'X-CodeLab-Nonce': nonce,
+        'X-CodeLab-Signature': signature}});
+    const data = await res.json();
+    assert.match(data.versions.c, /^\d+\.\d+/);
+    assert.match(data.versions.python, /^3\.\d+/);
+    assert.deepEqual(Object.keys(data.versions), data.languages);
+    assert.equal(data.queued, 0);
+    const open = await (await fetch(url.replace('/run', '/health'))).json();
+    assert.equal(open.versions, undefined);
+});
