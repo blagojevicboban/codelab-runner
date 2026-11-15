@@ -179,3 +179,24 @@ test('a signed /health has the versions of the languages', async() => {
     const open = await (await fetch(url.replace('/run', '/health'))).json();
     assert.equal(open.versions, undefined);
 });
+
+test('tests of contest problems: megabytes of input, hundreds of kilobytes of output, letters split between chunks', async() => {
+    const numbers = Array.from({length: 300000}, (_, i) => String(i % 1000)).join(' ');
+    const sum = Array.from({length: 300000}, (_, i) => i % 1000).reduce((a, b) => a + b, 0);
+    const code = 'import sys\nprint(sum(map(int, sys.stdin.read().split())))\nprint("čćžšđ" * 40000)\n';
+    const r = await post({lang: 'python', code, stdin: numbers});
+    assert.equal(r.code, 200);
+    assert.equal(r.data.status, 'ok');
+    const [first, second] = r.data.stdout.split('\n');
+    assert.equal(first, String(sum));
+    assert.equal(second, 'čćžšđ'.repeat(40000));
+    // Input with letters of two bytes all through: the signature and the text survive the chunks of the request.
+    const letters = await post({lang: 'python', code: 'import sys\nprint(len(sys.stdin.read()))', stdin: 'ћ'.repeat(500000)});
+    assert.equal(letters.data.stdout, '500000\n');
+});
+
+test('a run for grading larger than CODELAB_RUN_BODY_MB is refused with a message', async() => {
+    const r = await post({lang: 'python', code: 'print(1)', stdin: 'x'.repeat(9 * 1024 * 1024)});
+    assert.equal(r.code, 413);
+    assert.match(r.data.stderr, /larger than/);
+});

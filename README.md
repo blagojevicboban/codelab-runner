@@ -168,6 +168,8 @@ git config gpg.format ssh && git config gpg.ssh.allowedSignersFile ~/.config/git
 | `CODELAB_BATCH_MAX` | 10 | runs for grading (`POST /run`) at once, beside the sessions |
 | `CODELAB_BATCH_WAIT` | 30 | seconds a run for grading waits for a place before it is answered `busy` (0: no waiting) |
 | `CODELAB_BATCH_SITE_MAX` | `CODELAB_BATCH_MAX` | places of one site, so that a regrade on one site leaves places for the others |
+| `CODELAB_RUN_BODY_MB` | 8 | largest run for grading (program and input; tests of contest problems have inputs of megabytes) |
+| `CODELAB_BATCH_OUTPUT_MB` | 4 | largest output of a run for grading (sessions keep `CODELAB_MAX_OUTPUT`) |
 | `CODELAB_CPU_SECONDS` | 10 | CPU time of a program |
 | `CODELAB_WALL_SECONDS` | 300 | longest session, also while waiting for input |
 | `CODELAB_MAX_OUTPUT` | 100000 | bytes of output, then the program is stopped |

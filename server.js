@@ -35,6 +35,9 @@ import {runBatch, signedRequest} from './lib/batch.js';
 import {handleDeploy} from './lib/deploy.js';
 
 /** Version of the runner (package.json). */
+/** Largest body of a run for grading (program and input), CODELAB_RUN_BODY_MB. */
+const RUN_BODY_MAX = Number(process.env.CODELAB_RUN_BODY_MB || 8) * 1024 * 1024;
+
 const VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
 
 /**
@@ -101,12 +104,18 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
             return;
         }
         if (req.method === 'POST' && req.url === '/run') {
-            // A run for grading, from Moodle's server (signed with the secret), not from a browser.
-            let body = '';
+            // A run for grading, from Moodle's server (signed with the secret), not from a browser. Tests of contest
+            // problems have inputs of megabytes, as on Jobe. The body is collected as bytes: a letter of several bytes
+            // may be split between two chunks.
+            const chunks = [];
+            let size = 0;
+            let tooLarge = false;
             req.on('data', (chunk) => {
-                body += chunk;
-                if (body.length > 300000) {
-                    req.destroy();
+                size += chunk.length;
+                if (size > RUN_BODY_MAX) {
+                    tooLarge = true;
+                } else {
+                    chunks.push(chunk);
                 }
             });
             req.on('end', async() => {
@@ -114,6 +123,11 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
                     res.writeHead(code, {'Content-Type': 'application/json'});
                     res.end(JSON.stringify(data));
                 };
+                if (tooLarge) {
+                    return reply(413, {status: 'error', stdout: '', cmpinfo: '',
+                        stderr: `The program and its input are larger than ${RUN_BODY_MAX} bytes.`});
+                }
+                const body = Buffer.concat(chunks).toString('utf8');
                 if (!signedRequest(theSecrets, req.headers, body, runNonces)) {
                     return reply(401, {status: 'error', stderr: 'Unauthorized'});
                 }
