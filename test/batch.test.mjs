@@ -14,6 +14,8 @@ import {after, before, test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac, randomBytes} from 'node:crypto';
 import {startServer} from '../server.js';
+import {languageAvailable} from '../lib/sandbox.js';
+import {languageAvailable} from '../lib/sandbox.js';
 
 const SECRET = 'test-secret-of-sixteen-or-more';
 let server;
@@ -74,4 +76,31 @@ test('a request sent again is refused', async() => {
     assert.equal(first.code, 200);
     const again = await post(request, SECRET, 'the-same-nonce-0001');
     assert.equal(again.code, 401);
+});
+
+test('Python and PHP programs run in batch mode', async() => {
+    const py = await post({lang: 'python', code: 'print(int(input()) * 2)', stdin: '21\n'});
+    assert.deepEqual(py.data, {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    const php = await post({lang: 'php', code: '<?php echo trim(fgets(STDIN)) . "!"; ?>', stdin: 'hi\n'});
+    assert.deepEqual(php.data, {status: 'ok', stdout: 'hi!', stderr: '', cmpinfo: ''});
+});
+
+test('JavaScript and Pascal programs run in batch mode when installed', async(t) => {
+    if (languageAvailable('javascript')) {
+        const js = await post({lang: 'javascript', code: 'console.log(require("fs").readFileSync(0,"utf8").trim());', stdin: 'ok'});
+        assert.deepEqual(js.data, {status: 'ok', stdout: 'ok\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('node not in /usr/bin, skipping javascript');
+    }
+    if (languageAvailable('pascal')) {
+        const pas = await post({lang: 'pascal', code: 'var x: integer; begin readln(x); writeln(x + 1); end.', stdin: '41\n'});
+        assert.deepEqual(pas.data, {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('fpc not in /usr/bin, skipping pascal');
+    }
+});
+
+test('per-request cputime limits an endless loop', async() => {
+    const r = await post({lang: 'c', code: 'int main(void) { for (;;) {} }', cputime: 1});
+    assert.equal(r.data.status, 'time');
 });

@@ -25,7 +25,7 @@
 import {readFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {WebSocketServer} from 'ws';
-import {LANGUAGES} from './lib/sandbox.js';
+import {LANGUAGES, languageAvailable} from './lib/sandbox.js';
 import {mysqlConfigured} from './lib/mysql.js';
 import {Session} from './lib/session.js';
 import {NonceList, Secrets, TokenChecker} from './lib/token.js';
@@ -44,25 +44,35 @@ const VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.ur
  * @param {string} [options.secret] the secret of every site (default CODELAB_SECRET)
  * @param {string} [options.secrets] site:secret pairs (default CODELAB_SECRETS)
  * @param {function(): void} [options.exit] how a webhook update ends the process (default: exit, systemd restarts)
+ * @param {{of: function(string): string}} [options.secretsResolver] custom site-to-secret resolver
+ * @param {function(string, string): boolean} [options.allowOrigin] per-site Origin check
+ * @param {function({type: string, site: string, activeSiteSessions: number}): {ok: boolean, code?: number, reason?: string}} [options.authorize] pre-run check
+ * @param {function({type: string, site: string}): void} [options.onRun] called when a session or batch run starts
+ * @param {function(import('node:http').IncomingMessage, import('node:http').ServerResponse, {secrets: Object}): boolean} [options.onRequest] extra HTTP routes
  * @returns {Promise<import('node:http').Server>}
  */
-export const startServer = ({port, host, secret, secrets, exit = () => process.exit(75)} = {}) => {
-    const theSecrets = new Secrets(secret ?? process.env.CODELAB_SECRET, secrets ?? process.env.CODELAB_SECRETS);
+export const startServer = ({port, host, secret, secrets, exit = () => process.exit(75),
+    secretsResolver, allowOrigin, authorize, onRun, onRequest} = {}) => {
+    const theSecrets = secretsResolver ?? new Secrets(secret ?? process.env.CODELAB_SECRET, secrets ?? process.env.CODELAB_SECRETS);
     const checker = new TokenChecker(theSecrets);
     const runNonces = new NonceList();
     const origins = (process.env.CODELAB_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
+    const originAllowed = allowOrigin ?? ((_site, origin) => !origins.length || origins.includes(origin));
     const maxSessions = Number(process.env.CODELAB_MAX_SESSIONS || 30);
     const userSessions = Number(process.env.CODELAB_USER_SESSIONS || 2);
     const batchMax = Number(process.env.CODELAB_BATCH_MAX || 10);
     let batches = 0;
     /** @type {Map<string, number>} open sessions by site and user */
     const open = new Map();
+    /** @type {Map<string, number>} open sessions by site */
+    const siteOpen = new Map();
     let total = 0;
 
     const server = createServer((req, res) => {
         if (req.method === 'GET' && req.url === '/health') {
             res.writeHead(200, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'});
-            const languages = Object.keys(LANGUAGES).filter((lang) => lang !== 'mysql' || mysqlConfigured());
+            const languages = Object.keys(LANGUAGES).filter((lang) =>
+                languageAvailable(lang) && (lang !== 'mysql' || mysqlConfigured()));
             // The load of the server only for Moodle (signed like a run), not for anyone who asks.
             const signed = signedRequest(theSecrets, req.headers, '');
             res.end(JSON.stringify(signed ? {ok: true, languages, version: VERSION, sessions: total, runs: batches}
@@ -102,6 +112,13 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
                 if (!signedRequest(theSecrets, req.headers, body, runNonces)) {
                     return reply(401, {status: 'error', stderr: 'Unauthorized'});
                 }
+                const site = String(req.headers['x-codelab-site'] || '');
+                if (authorize) {
+                    const auth = authorize({type: 'batch', site, activeSiteSessions: siteOpen.get(site) || 0});
+                    if (!auth.ok) {
+                        return reply(auth.code || 200, {status: auth.reason || 'quota', stdout: '', stderr: '', cmpinfo: ''});
+                    }
+                }
                 // Runs for grading have their own places: a regrade does not take the students' sessions.
                 if (batches >= batchMax) {
                     return reply(200, {status: 'busy', stdout: '', stderr: '', cmpinfo: ''});
@@ -112,6 +129,7 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
                 } catch {
                     return reply(400, {status: 'error', stderr: 'Bad request'});
                 }
+                onRun?.({type: 'batch', site});
                 batches++;
                 try {
                     return reply(200, await runBatch(request));
@@ -119,6 +137,9 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
                     batches--;
                 }
             });
+            return;
+        }
+        if (onRequest?.(req, res, {secrets: theSecrets})) {
             return;
         }
         res.writeHead(404);
@@ -134,19 +155,32 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
         if (url.pathname !== '/session') {
             return refuse(404, 'Not Found');
         }
-        if (origins.length && !origins.includes(req.headers.origin)) {
-            return refuse(403, 'Forbidden');
-        }
         const payload = checker.check(url.searchParams.get('token'));
         if (!payload) {
             return refuse(401, 'Unauthorized');
         }
-        const who = `${payload.s || ''}/${payload.u}`;
+        const site = String(payload.s || '');
+        if (!originAllowed(site, req.headers.origin || '')) {
+            return refuse(403, 'Forbidden');
+        }
+        const auth = authorize ? authorize({type: 'session', site, activeSiteSessions: siteOpen.get(site) || 0}) : {ok: true};
+        if (!auth.ok && auth.code === 429) {
+            return refuse(429, 'Too Many Requests');
+        }
+        const who = `${site}/${payload.u}`;
         if (total >= maxSessions || (open.get(who) || 0) >= userSessions) {
             return refuse(429, 'Too Many Requests');
         }
+        if (!auth.ok) {
+            return wss.handleUpgrade(req, socket, head, (ws) => {
+                ws.send(JSON.stringify({type: 'error', reason: auth.reason || 'quota', message: auth.reason || 'quota'}));
+                ws.close(4000, auth.reason || 'quota');
+            });
+        }
+        onRun?.({type: 'session', site});
         total++;
         open.set(who, (open.get(who) || 0) + 1);
+        siteOpen.set(site, (siteOpen.get(site) || 0) + 1);
         return wss.handleUpgrade(req, socket, head, (ws) => {
             let ended = false;
             const end = () => {
@@ -156,6 +190,10 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
                     open.set(who, open.get(who) - 1);
                     if (!open.get(who)) {
                         open.delete(who);
+                    }
+                    siteOpen.set(site, siteOpen.get(site) - 1);
+                    if (!siteOpen.get(site)) {
+                        siteOpen.delete(site);
                     }
                 }
             };
