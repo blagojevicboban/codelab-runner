@@ -81,7 +81,8 @@ test('Python and PHP programs run in batch mode', async() => {
     const py = await post({lang: 'python', code: 'print(int(input()) * 2)', stdin: '21\n'});
     assert.deepEqual(py.data, {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
     const php = await post({lang: 'php', code: '<?php echo trim(fgets(STDIN)) . "!"; ?>', stdin: 'hi\n'});
-    assert.deepEqual(php.data, {status: 'ok', stdout: 'hi!', stderr: '', cmpinfo: ''});
+    // Only the status and the output: a PHP with extensions such as snmp writes notes to stderr when it starts.
+    assert.deepEqual([php.data.status, php.data.stdout], ['ok', 'hi!']);
 });
 
 test('JavaScript and Pascal programs run in batch mode when installed', async(t) => {
@@ -101,7 +102,8 @@ test('JavaScript and Pascal programs run in batch mode when installed', async(t)
 
 test('a JavaScript program cannot take more memory than its heap limit', {skip: !languageAvailable('javascript')}, async() => {
     const r = await post({lang: 'javascript', code: 'const a = []; for (;;) { a.push(new Array(1e6).fill(1)); }'});
-    assert.equal(r.data.status, 'runtime');
+    // V8 reports "heap out of memory": the status memory since 0.8.0.
+    assert.equal(r.data.status, 'memory');
 });
 
 test('a program sees only /usr and /etc of the server', async() => {
