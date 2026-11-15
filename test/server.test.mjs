@@ -194,3 +194,44 @@ test('/health shows the load only to a signed request', async() => {
     assert.equal(typeof signed.sessions, 'number');
     assert.match(signed.version, /^\d+\.\d+\.\d+$/);
 });
+
+test('hooks: sessions with a secretsResolver, refused and counted by authorize and onRun', async() => {
+    const runs = [];
+    const resolver = {of: (site) => (site === 'school' || site === 'blocked' ? 'resolver-secret-of-the-sites' : '')};
+    const hooked = await startServer({port: 0, host: '127.0.0.1', secretsResolver: resolver,
+        allowOrigin: () => true,
+        authorize: ({site}) => (site === 'blocked' ? {ok: false, code: 403, reason: 'suspended'} : {ok: true}),
+        onRun: (run) => runs.push(run)});
+    const url = `ws://127.0.0.1:${hooked.address().port}/session`;
+    const open = (site) => new Promise((resolve) => {
+        const t = sign({u: 7, s: site, e: Math.floor(Date.now() / 1000) + 60, n: randomUUID()}, 'resolver-secret-of-the-sites');
+        const ws = new WebSocket(`${url}?token=${t}`);
+        const got = [];
+        let out = '';
+        ws.onopen = () => ws.send(JSON.stringify({type: 'start', lang: 'python', code: 'print(6 * 7)'}));
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            got.push(message.reason ? `${message.type}:${message.reason}` : message.type);
+            out += message.type === 'out' ? message.data : '';
+            if (message.type === 'exit') {
+                ws.close();
+            }
+        };
+        ws.onclose = () => resolve({got, out});
+        // A refused upgrade: the client of Node reports the error, its close event comes much later.
+        ws.onerror = () => resolve({got, out});
+    });
+    try {
+        const ok = await open('school');
+        assert.equal(ok.out, '42\n');
+        const refused = await open('blocked');
+        assert.deepEqual(refused.got, ['error:suspended']);
+        // An unknown site is refused at the upgrade, and the server keeps running.
+        const unknown = await open('nobody');
+        assert.deepEqual(unknown.got, []);
+        assert.equal((await open('school')).out, '42\n');
+        assert.deepEqual(runs, [{type: 'session', site: 'school'}, {type: 'session', site: 'school'}]);
+    } finally {
+        hooked.close();
+    }
+});
