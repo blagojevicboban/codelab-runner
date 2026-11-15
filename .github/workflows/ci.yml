@@ -1,4 +1,5 @@
-# Tests of the CodeLab runner with real programs in the bubblewrap sandbox: C, C++ (also under gdb), Java, C#, and SQL on
+# Tests of the CodeLab runner with real programs in the bubblewrap sandbox: C, C++ (also under gdb), Java, C#, Python,
+# JavaScript, Pascal, PHP, and SQL on
 # MariaDB, on Ubuntu 24.04 like the production server.
 name: CI
 
@@ -25,7 +26,7 @@ jobs:
       - name: Compilers, gdb, bubblewrap and MariaDB
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends bubblewrap build-essential gdb openjdk-21-jdk-headless mono-mcs \
+          sudo apt-get install -y --no-install-recommends bubblewrap build-essential gdb openjdk-21-jdk-headless mono-mcs php-cli fp-compiler nodejs \
             mariadb-server mariadb-client
           # Ubuntu 24.04 allows unprivileged user namespaces (bubblewrap) only with an AppArmor profile.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0

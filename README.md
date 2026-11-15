@@ -6,9 +6,10 @@ input in the browser console, as in a terminal: prompts appear before the input,
 of the input (Ctrl+D). C and C++ programs can also run **step by step** under gdb: the browser marks the line that runs
 next and shows the variables of the function.
 
-It does not grade. Questions are still graded on [Jobe](https://github.com/trampgeek/jobe); this server is only for
-**Run** in examples, in the editor dialog and in the attempt of a question. Python runs in the browser (Pyodide).
-Without the server, every program runs on Jobe with the input given before the run.
+It also runs programs to their end for grading (`POST /run`, below): C, C++, Java, C#, **Python, JavaScript, Pascal,
+PHP** and SQL. A site can keep grading on [Jobe](https://github.com/trampgeek/jobe), or leave the Jobe settings of
+tiny_codelab empty and use only this server (tiny_codelab newer than 1.12). In examples Python still runs in the
+browser (Pyodide).
 
 ## How it works
 
@@ -35,6 +36,8 @@ messages).
 
 ```sh
 sudo apt-get install bubblewrap build-essential openjdk-21-jdk-headless mono-mcs gdb mariadb-server
+# For grading without Jobe, the other languages (each is offered only when its program is in /usr/bin):
+sudo apt-get install python3 nodejs fp-compiler php-cli
 ```
 
 ## SQL (MySQL / MariaDB)
@@ -49,7 +52,8 @@ and `CODELAB_MYSQL_SOCKET` (default `/run/mysqld/mysqld.sock`). Without them SQL
 ## Runs for grading
 
 `POST /run` with `{lang, code, stdin}` runs a program to its end and answers `{status, stdout, stderr, cmpinfo}`, as
-Jobe does. It is called by Moodle's server (tiny_codelab `runner_client`), not by browsers: the request carries
+Jobe does. Optional `cputime` (seconds, at most `CODELAB_CPU_SECONDS`) and `memory` (MB, 16 to 2048; not for Java, C#
+and JavaScript, whose heaps have their own limits) are the limits of a question. It is called by Moodle's server (tiny_codelab `runner_client`), not by browsers: the request carries
 `X-CodeLab-Site`, `X-CodeLab-Time`, `X-CodeLab-Nonce` and `X-CodeLab-Signature` = base64url(HMAC-SHA256(secret, time +
 "\n" + nonce + "\n" + body)), valid for 60 seconds and taken once (the nonce). Requests without a nonce (tiny_codelab older
 than 1.12) are signed as time + "\n" + body; `CODELAB_REQUIRE_NONCE=1` refuses them. qtype_codelab grades SQL questions
@@ -63,8 +67,17 @@ cannot open sessions in the name of another), add it to `CODELAB_SECRETS` as `si
 site id is shown under the state of the interactive server in the tiny_codelab settings (the first 12 characters of
 sha1 of the site address). With only `CODELAB_SECRETS`, sites that are not listed are refused.
 
-`GET /health` answers `{ok, languages}`; a request signed like a run (empty body) also gets `version`, `sessions` and
+`GET /health` answers `{ok, languages}` (the languages installed on the server); a request signed like a run (empty body) also gets `version`, `sessions` and
 `runs`, which the settings page of tiny_codelab shows.
+
+## Building on the server (hooks)
+
+`startServer()` of `server.js` takes optional functions, for a service that keeps its sites somewhere else than in
+the environment: `secretsResolver` (`{of(site)}`, the secret of a site), `allowOrigin(site, origin)`,
+`authorize({type, site, activeSiteSessions})` before a session or a run (`{ok}` or `{ok: false, code, reason}`; the
+reason reaches Moodle as the status of the run or as `{type: "error", reason}` of the session), `onRun({type, site})`
+when one starts, and `onRequest(req, res, {secrets})` for more HTTP routes. Without them the server works as described
+here.
 
 ## Install
 
@@ -175,7 +188,7 @@ Server to client: `{type: "compiling"}`, `{type: "compile", ok: false, output}`,
 `{type: "out", data}`, `{type: "err", data}`, `{type: "paused", line, func, vars: [{name, value}], stack: [{func, line,
 vars}]}` (the student's frames, innermost first),
 `{type: "exit", status, code, signal}` (status `ok`, `runtime`, `time`,
-`memory`, `toolong` or `stopped`), `{type: "error", message}`.
+`memory`, `toolong` or `stopped`), `{type: "error", message}` (with `reason` when a hook refused the session).
 
 In step mode the program is compiled with `-g -O0` and runs under `gdb --interpreter=mi3`; its input and output go
 through FIFOs in its folder. A step that goes into the C library (printf, scanf) returns to the student's code at once,

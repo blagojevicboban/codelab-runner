@@ -15,7 +15,6 @@ import assert from 'node:assert/strict';
 import {createHmac, randomBytes} from 'node:crypto';
 import {startServer} from '../server.js';
 import {languageAvailable} from '../lib/sandbox.js';
-import {languageAvailable} from '../lib/sandbox.js';
 
 const SECRET = 'test-secret-of-sixteen-or-more';
 let server;
@@ -97,6 +96,59 @@ test('JavaScript and Pascal programs run in batch mode when installed', async(t)
         assert.deepEqual(pas.data, {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
     } else {
         t.diagnostic('fpc not in /usr/bin, skipping pascal');
+    }
+});
+
+test('a JavaScript program cannot take more memory than its heap limit', {skip: !languageAvailable('javascript')}, async() => {
+    const r = await post({lang: 'javascript', code: 'const a = []; for (;;) { a.push(new Array(1e6).fill(1)); }'});
+    assert.equal(r.data.status, 'runtime');
+});
+
+test('a program sees only /usr and /etc of the server', async() => {
+    const code = 'import os\nprint(sorted(os.listdir("/")))\n' +
+        'print([d for d in ("/var/lib", "/home", "/opt", "/root") if os.path.exists(d)])\n';
+    const r = await post({lang: 'python', code});
+    assert.equal(r.data.status, 'ok');
+    const [root, others] = r.data.stdout.trim().split('\n');
+    assert.equal(root, "['bin', 'box', 'dev', 'etc', 'lib', 'lib64', 'proc', 'tmp', 'usr']");
+    assert.equal(others, '[]');
+});
+
+test('hooks: authorize refuses a run, onRun counts the others, onRequest adds a route', async() => {
+    const runs = [];
+    const hooked = await startServer({port: 0, host: '127.0.0.1', secret: SECRET,
+        authorize: ({type, site}) => (site === 'blocked' ? {ok: false, code: 403, reason: 'suspended'} : {ok: type === 'batch'}),
+        onRun: (run) => runs.push(run),
+        onRequest: (req, res) => {
+            if (req.url !== '/extra') {
+                return false;
+            }
+            res.writeHead(200, {'Content-Type': 'text/plain'});
+            res.end('extra');
+            return true;
+        }});
+    const base = `http://127.0.0.1:${hooked.address().port}`;
+    const send = async(site) => {
+        const body = JSON.stringify({lang: 'python', code: 'print(1)'});
+        const time = String(Math.floor(Date.now() / 1000));
+        const nonce = randomBytes(12).toString('base64url');
+        const signature = createHmac('sha256', SECRET).update(`${time}\n${nonce}\n${body}`).digest('base64url');
+        const res = await fetch(`${base}/run`, {method: 'POST', body, headers: {'X-CodeLab-Site': site,
+            'X-CodeLab-Time': time, 'X-CodeLab-Nonce': nonce, 'X-CodeLab-Signature': signature}});
+        return {code: res.status, data: await res.json()};
+    };
+    try {
+        const refused = await send('blocked');
+        assert.equal(refused.code, 403);
+        assert.equal(refused.data.status, 'suspended');
+        assert.deepEqual(runs, []);
+        const ok = await send('school');
+        assert.equal(ok.data.stdout, '1\n');
+        assert.deepEqual(runs, [{type: 'batch', site: 'school'}]);
+        assert.equal(await (await fetch(`${base}/extra`)).text(), 'extra');
+        assert.equal((await fetch(`${base}/other`)).status, 404);
+    } finally {
+        hooked.close();
     }
 });
 

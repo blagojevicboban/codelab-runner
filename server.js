@@ -5,8 +5,8 @@
 // version. It is distributed WITHOUT ANY WARRANTY; see <http://www.gnu.org/licenses/>.
 
 /**
- * CodeLab runner: keeps a student's C, C++, Java or C# program running while the student types its input in the
- * browser. Grading stays on Jobe; this server only runs programs interactively.
+ * CodeLab runner: keeps a student's program running while the student types its input in the browser (WebSocket
+ * /session), and runs programs to their end for grading (POST /run), so that a site needs no Jobe server.
  *
  *   CODELAB_SECRET=<the secret of the tiny_codelab settings> node server.js
  *
