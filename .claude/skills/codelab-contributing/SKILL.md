@@ -12,9 +12,9 @@ Moodle). Every change is a security change. Read `CONTRIBUTING.md` and `README.m
 
 - One issue per pull request, from a branch `fix/<name>` or `feature/<name>`; put `Fixes #N` in the description, and
   say what the change means for the sandbox.
-- `main` is protected: green CI (Node 20 and 22 with MariaDB) and the maintainer's approval. Release tags `v*` are made
-  and signed by the maintainer; servers deploy only signed tags.
-- Do not change the version in `package.json`. Commit messages in English. Never commit secrets (`CODELAB_SECRET`,
+- `main` is protected: green CI (Node 20 and 22 with MariaDB); then merge. Releases: bump `version` in `package.json`,
+  wait for CI, tag `v<version>` (signed when you can); servers update only when the maintainer deploys a tag.
+- Commit messages in English. Never commit secrets (`CODELAB_SECRET`,
   `CODELAB_SECRETS`, database passwords); use your own test values.
 
 ## Security rules

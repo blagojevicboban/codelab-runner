@@ -11,9 +11,9 @@ Thank you for helping. The runner is the interactive and grading server of the C
 1. Take an open issue (or open one first for a larger change) and say in it that you are working on it.
 2. Create a branch from `main` in this repository: `fix/<short-name>` or `feature/<short-name>`.
 3. Keep a pull request to one topic; describe the change and how you tested it.
-4. `main` is protected: a pull request needs a green CI (Node 20 and 22 with MariaDB) and the maintainer's approval.
-   Release tags `v*` are created and signed by the maintainer only; servers deploy only signed tags.
-5. Do not change the version in `package.json`: the maintainer does that when a release is made.
+4. `main` is protected: a pull request needs a green CI (Node 20 and 22 with MariaDB); then merge it.
+5. Releases: bump `version` in `package.json` in a commit `Release <version>`, wait for CI, then `git tag -s v<version>`
+   (signed, if you have a signing key) and push the tag. Servers update only when the maintainer deploys a tag.
 
 ## Development setup
 
