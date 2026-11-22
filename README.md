@@ -207,7 +207,12 @@ so only the student's lines are shown. `CODELAB_DEBUG_MI=1` prints gdb's machine
 npm test
 ```
 
-They run real programs in the sandbox (Linux with the packages above).
+They run real programs in the sandbox (Linux with the packages above). The tests that need no sandbox (tokens, the
+queue, the cache, deploy and the start check) also run on Windows and macOS:
+
+```sh
+npm run test:unit
+```
 
 ## License
 
