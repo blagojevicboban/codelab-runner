@@ -34,6 +34,7 @@ import {NonceList, Secrets, TokenChecker} from './lib/token.js';
 import {BatchQueue} from './lib/queue.js';
 import {runBatch, signedRequest} from './lib/batch.js';
 import {handleDeploy} from './lib/deploy.js';
+import {clientError, logError} from './lib/errors.js';
 
 /** Version of the runner (package.json). */
 /** Largest body of a run for grading (program and input), CODELAB_RUN_BODY_MB. */
@@ -246,7 +247,10 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
                 } catch {
                     message = null;
                 }
-                const handle = () => session.handle(message).catch((e) => session.fail(e.message));
+                const handle = () => session.handle(message).catch((e) => {
+                    logError('session', e);
+                    return session.fail(clientError(e));
+                });
                 if (message?.type === 'stop') {
                     handle();
                 } else {
