@@ -284,3 +284,20 @@ test('MSVC mode: conio.h, windows.h, scanf_s with size, fopen_s, strcpy_s, __int
     const bad = await post({lang: 'c', code: 'int main(){}', compiler: 'evil'});
     assert.equal(bad.data.status, 'error');
 });
+
+test('safe mode (ASan/UBSan): catches out-of-bounds array access with line number', async() => {
+    const code = [
+        '#include <stdio.h>',
+        'int main(void) {',
+        '    int a[3] = {1, 2, 3};',
+        '    volatile int i = 5;',
+        '    printf("%d\\n", a[i]);',
+        '    return 0;',
+        '}',
+    ].join('\n') + '\n';
+    const r = await post({lang: 'c', code, sanitize: true});
+    assert.equal(r.code, 200);
+    assert.equal(r.data.status, 'runtime', r.data.cmpinfo || r.data.stderr);
+    assert.match(r.data.stderr, /out of bounds|stack-buffer-overflow/i);
+    assert.match(r.data.stderr, /prog\.c:5/);
+});

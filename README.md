@@ -81,6 +81,10 @@ compiles with `lib/msvc/` headers (`codelab_msvc.h`, `conio.h`, `windows.h`) pro
 `__int64`, `_getch`, `Sleep`, `system("pause")`/`system("cls")` as no-ops). Signed `GET /health` also reports
 installed `compilers` (`gcc`, and `clang` when present).
 
+Since 0.12.0, C and C++ runs accept optional `sanitize: true` (safe mode: `-fsanitize=address,undefined` with
+`max_allocation_size_mb=256`, linking `codelab_unbuffered.c` instead of `stdbuf`) to report out-of-bounds array
+access, use-after-free, null dereference, division by zero and signed integer overflow with exact source lines.
+
 ## One server for several Moodle sites
 
 `CODELAB_SECRET` is the secret of every site. To give a site a secret of its own (an administrator of one site then

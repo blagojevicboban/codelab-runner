@@ -16,11 +16,12 @@ import {normalizeCompileOptions} from '../lib/compiler.js';
 import {cacheKey} from '../lib/cache.js';
 
 test('normalizeCompileOptions accepts whitelisted compilers and standards and rejects arbitrary flags', () => {
-    assert.deepEqual(normalizeCompileOptions('c'), {ok: true, options: {compiler: 'gcc', std: 'c11', key: 'gcc:c11'}});
-    assert.deepEqual(normalizeCompileOptions('c', {compiler: 'c-msvc', std: 'c17'}),
-        {ok: true, options: {compiler: 'msvc', std: 'c17', key: 'msvc:c17'}});
+    assert.deepEqual(normalizeCompileOptions('c'),
+        {ok: true, options: {compiler: 'gcc', std: 'c11', sanitize: false, key: 'gcc:c11'}});
+    assert.deepEqual(normalizeCompileOptions('c', {compiler: 'c-msvc', std: 'c17', sanitize: true}),
+        {ok: true, options: {compiler: 'msvc', std: 'c17', sanitize: true, key: 'msvc:c17:san'}});
     assert.deepEqual(normalizeCompileOptions('cpp', {compiler: 'clang', std: '20'}),
-        {ok: true, options: {compiler: 'clang', std: 'c++20', key: 'clang:c++20'}});
+        {ok: true, options: {compiler: 'clang', std: 'c++20', sanitize: false, key: 'clang:c++20'}});
     assert.deepEqual(normalizeCompileOptions('python', {compiler: 'msvc'}), {ok: true, options: null});
 
     assert.equal(normalizeCompileOptions('c', {compiler: 'gcc -O3'}).ok, false);
