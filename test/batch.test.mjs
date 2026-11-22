@@ -43,13 +43,39 @@ const post = async(request, secret = SECRET, nonce = randomBytes(12).toString('b
     return {code: res.status, data: await res.json()};
 };
 
+/**
+ * The answer without its time, which differs from run to run.
+ *
+ * @param {Object} data
+ * @returns {Object}
+ */
+const timeless = ({time, ...rest}) => rest;
+
 test('a C program with its input, as from Jobe', async() => {
     const code = '#include <stdio.h>\nint main(void) { int a, b; scanf("%d %d", &a, &b); printf("%d\\n", a + b); return 0; }\n';
     const r = await post({lang: 'c', code, stdin: '20 22'});
     assert.equal(r.code, 200);
-    assert.deepEqual(r.data, {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    assert.deepEqual(timeless(r.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
     const bad = await post({lang: 'c', code: 'int main(void) { return x; }'});
     assert.equal(bad.data.status, 'compile');
+});
+
+test('the time of a run: seconds with 3 decimals, without the compilation, none when nothing ran', async() => {
+    const quick = await post({lang: 'c', code: 'int main(void) { return 0; }'});
+    assert.equal(typeof quick.data.time, 'number');
+    assert.ok(quick.data.time >= 0 && quick.data.time < 2, `time ${quick.data.time}`);
+    assert.equal(quick.data.time, Math.round(quick.data.time * 1000) / 1000);
+    const slow = await post({lang: 'python', code: 'import time\ntime.sleep(0.5)\n'});
+    assert.equal(slow.data.status, 'ok');
+    assert.ok(slow.data.time >= 0.5 && slow.data.time < 5, `time ${slow.data.time}`);
+    // A failed or endless program has its time too; a compilation error and a refused request have none.
+    const failed = await post({lang: 'python', code: 'raise SystemExit(3)'});
+    assert.equal(failed.data.status, 'runtime');
+    assert.equal(typeof failed.data.time, 'number');
+    const bad = await post({lang: 'c', code: 'int main(void) { return x; }'});
+    assert.equal(bad.data.time, undefined);
+    const unknown = await post({lang: 'cobol', code: 'x'});
+    assert.equal(unknown.data.time, undefined);
 });
 
 test('SQL gives only the tables, in a database of its own', {skip: !process.env.CODELAB_MYSQL_PASSWORD}, async() => {
@@ -59,6 +85,7 @@ test('SQL gives only the tables, in a database of its own', {skip: !process.env.
     assert.equal(r.data.status, 'ok');
     assert.equal(r.data.stdout, '+------+-------+\n| a    | b     |\n+------+-------+\n|    1 | jedan |\n|    2 | dva   |\n' +
         '+------+-------+\n');
+    assert.equal(r.data.time, undefined);
     const error = await post({lang: 'mysql', code: 'SELECT * FROM nema;'});
     assert.equal(error.data.status, 'runtime');
     assert.match(error.data.stderr, /ERROR 1146/);
@@ -79,7 +106,7 @@ test('a request sent again is refused', async() => {
 
 test('Python and PHP programs run in batch mode', async() => {
     const py = await post({lang: 'python', code: 'print(int(input()) * 2)', stdin: '21\n'});
-    assert.deepEqual(py.data, {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    assert.deepEqual(timeless(py.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
     const php = await post({lang: 'php', code: '<?php echo trim(fgets(STDIN)) . "!"; ?>', stdin: 'hi\n'});
     // Only the status and the output: a PHP with extensions such as snmp writes notes to stderr when it starts.
     assert.deepEqual([php.data.status, php.data.stdout], ['ok', 'hi!']);
@@ -88,13 +115,13 @@ test('Python and PHP programs run in batch mode', async() => {
 test('JavaScript and Pascal programs run in batch mode when installed', async(t) => {
     if (languageAvailable('javascript')) {
         const js = await post({lang: 'javascript', code: 'console.log(require("fs").readFileSync(0,"utf8").trim());', stdin: 'ok'});
-        assert.deepEqual(js.data, {status: 'ok', stdout: 'ok\n', stderr: '', cmpinfo: ''});
+        assert.deepEqual(timeless(js.data), {status: 'ok', stdout: 'ok\n', stderr: '', cmpinfo: ''});
     } else {
         t.diagnostic('node not in /usr/bin, skipping javascript');
     }
     if (languageAvailable('pascal')) {
         const pas = await post({lang: 'pascal', code: 'var x: integer; begin readln(x); writeln(x + 1); end.', stdin: '41\n'});
-        assert.deepEqual(pas.data, {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+        assert.deepEqual(timeless(pas.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
     } else {
         t.diagnostic('fpc not in /usr/bin, skipping pascal');
     }
