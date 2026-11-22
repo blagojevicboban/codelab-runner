@@ -248,3 +248,39 @@ test('input and output files in the working folder (C)', async() => {
     const bad = await post({lang: 'c', code, files: [{name: '../etc', text: 'x'}]});
     assert.equal(bad.data.status, 'error');
 });
+
+test('MSVC mode: conio.h, windows.h, scanf_s with size, fopen_s, strcpy_s, __int64, system pause/cls', async() => {
+    const code = [
+        '#pragma warning(disable: 4996)',
+        '#include <stdio.h>',
+        '#include <conio.h>',
+        '#include <windows.h>',
+        'int main(void) {',
+        '    SetConsoleOutputCP(CP_UTF8);',
+        '    system("cls");',
+        '    char name[16];',
+        '    __int64 n = 0;',
+        '    scanf_s("%s %lld", name, (unsigned)sizeof(name), &n);',
+        '    char copy[32];',
+        '    strcpy_s(copy, sizeof(copy), name);',
+        '    strcat_s(copy, sizeof(copy), "!");',
+        '    FILE *f = NULL;',
+        '    if (fopen_s(&f, "out.txt", "w") == 0 && f) {',
+        '        fprintf_s(f, "%s %lld\\n", copy, n * 2);',
+        '        fclose(f);',
+        '    }',
+        '    printf_s("%s %lld\\n", copy, n);',
+        '    system("pause");',
+        '    return 0;',
+        '}',
+    ].join('\n') + '\n';
+    const r = await post({lang: 'c', code, stdin: 'Pirot 21\n', compiler: 'msvc', std: 'c17'});
+    assert.equal(r.code, 200);
+    assert.equal(r.data.status, 'ok', r.data.cmpinfo || r.data.stderr);
+    assert.equal(r.data.stdout, 'Pirot! 21\n');
+    assert.deepEqual(r.data.files, [{name: 'out.txt', text: 'Pirot! 42\n', size: 10}]);
+
+    // Unknown compiler or standard is refused.
+    const bad = await post({lang: 'c', code: 'int main(){}', compiler: 'evil'});
+    assert.equal(bad.data.status, 'error');
+});

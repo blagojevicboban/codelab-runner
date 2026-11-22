@@ -1,6 +1,6 @@
 {
   "name": "codelab-runner",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Interactive server of the CodeLab plugins for Moodle: runs programs (C, C++, Java, C#, Python, JavaScript, Pascal, PHP, SQL) in a sandbox, interactively and for grading.",
   "type": "module",
   "main": "server.js",
@@ -12,7 +12,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.mjs",
-    "test:unit": "node --test test/token.test.mjs test/queue.test.mjs test/cache.test.mjs test/deploy.test.mjs test/main.test.mjs test/errors.test.mjs test/files.test.mjs"
+    "test:unit": "node --test test/token.test.mjs test/queue.test.mjs test/cache.test.mjs test/deploy.test.mjs test/main.test.mjs test/errors.test.mjs test/files.test.mjs test/compiler.test.mjs"
   },
   "dependencies": {
     "ws": "8.22.1"

@@ -74,6 +74,13 @@ up to 5 files of 64 KB each; simple names without folders) placed in the program
 (while `/box` stays read-only). Regular files created or changed by the program are returned after the run (`files`
 in `POST /run`, `{type: "files", files}` before `exit` in `/session`).
 
+Since 0.11.0, C and C++ runs accept whitelisted optional `compiler` (`gcc`, `msvc`, `clang`) and `std`
+(`c99`, `c11`, `c17`, `c23` for C; `c++11`, `c++14`, `c++17`, `c++20`, `c++23` for C++). In `msvc` mode, gcc/g++
+compiles with `lib/msvc/` headers (`codelab_msvc.h`, `conio.h`, `windows.h`) providing Visual Studio functions
+(`scanf_s`/`fscanf_s`/`sscanf_s` with buffer sizes, `fopen_s`, `strcpy_s`, `strcat_s`, `strncpy_s`, `gets_s`, `_itoa`,
+`__int64`, `_getch`, `Sleep`, `system("pause")`/`system("cls")` as no-ops). Signed `GET /health` also reports
+installed `compilers` (`gcc`, and `clang` when present).
+
 ## One server for several Moodle sites
 
 `CODELAB_SECRET` is the secret of every site. To give a site a secret of its own (an administrator of one site then

@@ -94,9 +94,13 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
             // The load of the server and the versions only for Moodle (signed like a run), not for anyone who asks.
             const signed = signedRequest(theSecrets, req.headers, '');
             const all = signed ? await languageVersions() : {};
+            const compilers = Object.fromEntries(
+                [['gcc', all.c || ''], ['clang', all.clang || '']].filter(([, v]) => v)
+            );
             res.writeHead(200, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'});
             res.end(JSON.stringify(signed ? {ok: true, languages, version: VERSION, sessions: total, runs: queue.running,
-                queued: queue.queued, versions: Object.fromEntries(languages.map((lang) => [lang, all[lang] || '']))}
+                queued: queue.queued, versions: Object.fromEntries(languages.map((lang) => [lang, all[lang] || ''])),
+                compilers}
                 : {ok: true, languages}));
             return;
         }
