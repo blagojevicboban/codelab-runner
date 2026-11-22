@@ -75,7 +75,9 @@ test('a session whose program cannot start ends with a short error', async() => 
 });
 
 test('a compiler that cannot start gives a compile message, not an empty one', async() => {
-    const messages = await withoutSandbox(() => session({lang: 'c', code: 'int main(void) { return 0; }'}));
+    // A program of its own, so it is not taken from the cache of compiled programs.
+    const code = `int main(void) { return 0; } /* ${Date.now()} ${Math.random()} */`;
+    const messages = await withoutSandbox(() => session({lang: 'c', code}));
     const compile = messages.find((m) => m.type === 'compile');
     assert.ok(compile, JSON.stringify(messages));
     assert.equal(compile.ok, false);
