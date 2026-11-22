@@ -44,15 +44,18 @@ const token = (extra = {}) => sign({u: 7, s: 'test', e: Math.floor(Date.now() / 
  * @param {boolean} [options.stop] stop the program after the first output
  * @returns {Promise<{out: string, err: string, messages: Object[], exit: Object|undefined}>}
  */
-const session = (lang, code, {lines = [], stdin = '', eof = false, stop = false, grant = {}} = {}) =>
+const session = (lang, code, {lines = [], stdin = '', eof = false, stop = false, grant = {}, files} = {}) =>
     new Promise((resolve, reject) => {
     const ws = new WebSocket(`${base}?token=${token(grant)}`);
-    const result = {out: '', err: '', messages: [], exit: undefined};
+    const result = {out: '', err: '', files: [], messages: [], exit: undefined};
     const pending = [...lines];
-    ws.onopen = () => ws.send(JSON.stringify({type: 'start', lang, code, stdin}));
+    ws.onopen = () => ws.send(JSON.stringify({type: 'start', lang, code, stdin, ...(files ? {files} : {})}));
     ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
         result.messages.push(message.type);
+        if (message.type === 'files') {
+            result.files = message.files;
+        }
         if (message.type === 'out') {
             result.out += message.data;
             if (stop) {
@@ -234,4 +237,19 @@ test('hooks: sessions with a secretsResolver, refused and counted by authorize a
     } finally {
         hooked.close();
     }
+});
+
+test('interactive session: input files are readable and output files are returned', async() => {
+    const code = '#include <stdio.h>\nint main(void) {\n' +
+        '    FILE *f = fopen("data.txt", "r");\n' +
+        '    int n = 0;\n' +
+        '    if (f) { fscanf(f, "%d", &n); fclose(f); }\n' +
+        '    printf("%d\\n", n);\n' +
+        '    FILE *o = fopen("res.txt", "w");\n' +
+        '    if (o) { fprintf(o, "ok %d\\n", n * 2); fclose(o); }\n' +
+        '    return 0;\n}\n';
+    const r = await session('c', code, {files: [{name: 'data.txt', text: '21\n'}]});
+    assert.equal(r.exit.status, 'ok');
+    assert.equal(r.out, '21\n');
+    assert.deepEqual(r.files, [{name: 'res.txt', text: 'ok 42\n', size: 6}]);
 });

@@ -180,7 +180,7 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
         res.writeHead(404);
         res.end();
     });
-    const wss = new WebSocketServer({noServer: true, maxPayload: 256 * 1024});
+    const wss = new WebSocketServer({noServer: true, maxPayload: 512 * 1024});
 
     server.on('upgrade', (req, socket, head) => {
         const refuse = (code, text) => {

@@ -139,7 +139,7 @@ test('a program sees only /usr and /etc of the server', async() => {
     const r = await post({lang: 'python', code});
     assert.equal(r.data.status, 'ok');
     const [root, others] = r.data.stdout.trim().split('\n');
-    assert.equal(root, "['bin', 'box', 'dev', 'etc', 'lib', 'lib64', 'proc', 'tmp', 'usr']");
+    assert.equal(root, "['bin', 'box', 'dev', 'etc', 'lib', 'lib64', 'proc', 'tmp', 'usr', 'work']");
     assert.equal(others, '[]');
 });
 
@@ -228,4 +228,23 @@ test('a run for grading larger than CODELAB_RUN_BODY_MB is refused with a messag
     const r = await post({lang: 'python', code: 'print(1)', stdin: 'x'.repeat(9 * 1024 * 1024)});
     assert.equal(r.code, 413);
     assert.match(r.data.stderr, /larger than/);
+});
+
+test('input and output files in the working folder (C)', async() => {
+    const code = '#include <stdio.h>\nint main(void) {\n' +
+        '    FILE *in = fopen("ulaz.txt", "r");\n' +
+        '    int a = 0, b = 0;\n' +
+        '    if (in) { fscanf(in, "%d %d", &a, &b); fclose(in); }\n' +
+        '    printf("%d\\n", a + b);\n' +
+        '    FILE *out = fopen("izlaz.txt", "w");\n' +
+        '    if (out) { fprintf(out, "%d\\n", a * b); fclose(out); }\n' +
+        '    return 0;\n}\n';
+    const r = await post({lang: 'c', code, files: [{name: 'ulaz.txt', text: '6 7\n'}]});
+    assert.equal(r.code, 200);
+    assert.equal(r.data.status, 'ok');
+    assert.equal(r.data.stdout, '13\n');
+    assert.deepEqual(r.data.files, [{name: 'izlaz.txt', text: '42\n', size: 3}]);
+    // Invalid file name is refused.
+    const bad = await post({lang: 'c', code, files: [{name: '../etc', text: 'x'}]});
+    assert.equal(bad.data.status, 'error');
 });
