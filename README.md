@@ -52,7 +52,7 @@ and `CODELAB_MYSQL_SOCKET` (default `/run/mysqld/mysqld.sock`). Without them SQL
 ## Runs for grading
 
 `POST /run` with `{lang, code, stdin}` runs a program to its end and answers `{status, stdout, stderr, cmpinfo}`, as
-Jobe does. Optional `cputime` (seconds, at most `CODELAB_CPU_SECONDS`) and `memory` (MB, 16 to 2048; not for Java, C#
+Jobe does (and `time`, below). Optional `cputime` (seconds, at most `CODELAB_CPU_SECONDS`) and `memory` (MB, 16 to 2048; not for Java, C#
 and JavaScript, whose heaps have their own limits) are the limits of a question. It is called by Moodle's server (tiny_codelab `runner_client`), not by browsers: the request carries
 `X-CodeLab-Site`, `X-CodeLab-Time`, `X-CodeLab-Nonce` and `X-CodeLab-Signature` = base64url(HMAC-SHA256(secret, time +
 "\n" + nonce + "\n" + body)), valid for 60 seconds and taken once (the nonce). Requests without a nonce (tiny_codelab older
@@ -62,6 +62,12 @@ with it; SQL output is then only the result tables (`--table`). Runs for grading
 for a place (`CODELAB_BATCH_WAIT`); the places go to the site with the fewest runs going on, so a regrade of hundreds
 of runs on one site does not hold up a single run of another. A program that ends for lack of memory gets the status
 `memory` (here and in sessions).
+
+The answer has an optional `time` too (since 0.9.0): the seconds the program ran, with 3 decimals, for example
+`{"status": "ok", ..., "time": 0.012}`. It is wall time of the run in the sandbox, not CPU time, and the compilation is
+not in it; the start of the runtime is (about 0.05 s for C, 0.3 s for Java and C#), so it is a hint to the speed of a
+solution, not a measure of a judge. There is no `time` when nothing ran (a compilation error, a refused request) and
+for SQL. Clients that do not know the field can ignore it: nothing else in the answer changed.
 
 ## One server for several Moodle sites
 
