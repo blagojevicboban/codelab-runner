@@ -25,6 +25,7 @@
  */
 import {readFileSync} from 'node:fs';
 import {createServer} from 'node:http';
+import {pathToFileURL} from 'node:url';
 import {WebSocketServer} from 'ws';
 import {LANGUAGES, languageAvailable, languageVersions} from './lib/sandbox.js';
 import {mysqlConfigured} from './lib/mysql.js';
@@ -39,6 +40,17 @@ import {handleDeploy} from './lib/deploy.js';
 const RUN_BODY_MAX = Number(process.env.CODELAB_RUN_BODY_MB || 8) * 1024 * 1024;
 
 const VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
+
+/**
+ * Whether a module is the one Node was started with (node server.js), so that importing it (tests, a service built on
+ * startServer) does not start a server. The script path becomes a file URL as Node makes it, so paths with spaces or
+ * other special characters match too.
+ *
+ * @param {string} moduleUrl import.meta.url of the module
+ * @param {string|undefined} scriptPath process.argv[1], missing or empty when Node runs no script (REPL, -e)
+ * @returns {boolean}
+ */
+export const isMain = (moduleUrl, scriptPath) => Boolean(scriptPath) && moduleUrl === pathToFileURL(scriptPath).href;
 
 /**
  * Start the server.
@@ -255,7 +267,7 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
     });
 };
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url, process.argv[1])) {
     const server = await startServer();
     const {address, port} = server.address();
     process.stdout.write(`CodeLab runner on ${address}:${port}\n`);

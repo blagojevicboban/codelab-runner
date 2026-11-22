@@ -11,7 +11,8 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "test:unit": "node --test test/token.test.mjs test/queue.test.mjs test/cache.test.mjs test/deploy.test.mjs test/main.test.mjs"
   },
   "dependencies": {
     "ws": "8.22.1"
