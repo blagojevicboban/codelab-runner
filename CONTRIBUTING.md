@@ -29,8 +29,8 @@ Thank you for helping. The runner is the interactive and grading server of the C
 npm test            # all tests: sandbox, sessions, gdb, SQL, grading (needs Linux with bubblewrap)
 ```
 
-The tests of `lib/token.js`, `lib/queue.js`, `lib/cache.js`, `lib/deploy.js` and the start check of `server.js` need no
-sandbox and also run on Windows or macOS: `npm run test:unit`.
+The tests of `lib/token.js`, `lib/queue.js`, `lib/cache.js`, `lib/deploy.js`, `lib/errors.js` and the start check of `server.js`
+need no sandbox and also run on Windows or macOS: `npm run test:unit`.
 
 ## Rules
 

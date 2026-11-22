@@ -35,8 +35,8 @@ Moodle). Every change is a security change. Read `CONTRIBUTING.md` and `README.m
 npm test    # all tests (Linux or WSL 2 with bubblewrap, gdb, compilers and MariaDB)
 ```
 
-The tests of `lib/token.js`, `lib/queue.js`, `lib/cache.js`, `lib/deploy.js` and the start check of `server.js` run
-anywhere: `npm run test:unit`.
+The tests of `lib/token.js`, `lib/queue.js`, `lib/cache.js`, `lib/deploy.js`, `lib/errors.js` and the start check of `server.js`
+run anywhere: `npm run test:unit`.
 
 - New behaviour gets a test in `test/`; a bug fix gets a test that failed before.
 - Keep the code style of the files around (ES modules, two levels of JSDoc for exported functions, no emoji).

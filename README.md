@@ -208,7 +208,7 @@ npm test
 ```
 
 They run real programs in the sandbox (Linux with the packages above). The tests that need no sandbox (tokens, the
-queue, the cache, deploy and the start check) also run on Windows and macOS:
+queue, the cache, deploy, the start check and the error messages) also run on Windows and macOS:
 
 ```sh
 npm run test:unit
