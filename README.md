@@ -69,6 +69,11 @@ not in it; the start of the runtime is (about 0.05 s for C, 0.3 s for Java and C
 solution, not a measure of a judge. There is no `time` when nothing ran (a compilation error, a refused request) and
 for SQL. Clients that do not know the field can ignore it: nothing else in the answer changed.
 
+Since 0.10.0, both `POST /run` and WebSocket `/session` (`start`) accept an optional `files` array (`[{name, text}]`,
+up to 5 files of 64 KB each; simple names without folders) placed in the program's writable working folder `/work`
+(while `/box` stays read-only). Regular files created or changed by the program are returned after the run (`files`
+in `POST /run`, `{type: "files", files}` before `exit` in `/session`).
+
 ## One server for several Moodle sites
 
 `CODELAB_SECRET` is the secret of every site. To give a site a secret of its own (an administrator of one site then
