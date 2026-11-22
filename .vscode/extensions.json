@@ -1,0 +1,9 @@
+{
+    "recommendations": [
+        "dbaeumer.vscode-eslint",
+        "github.vscode-github-actions",
+        "github.vscode-pull-request-github",
+        "humao.rest-client",
+        "shardulm94.trailing-spaces"
+    ]
+}
