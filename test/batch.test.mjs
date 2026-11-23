@@ -236,6 +236,13 @@ test('Bash, TypeScript, Go, Rust and R programs run in batch mode when installed
     } else {
         t.diagnostic('swiftc not in /usr/bin, skipping swift');
     }
+    if (languageAvailable('haskell')) {
+        const hs = await post({lang: 'haskell',
+            code: 'main = do\n    s <- getLine\n    print (2 * (read s :: Int))\n', stdin: '21\n'});
+        assert.deepEqual(timeless(hs.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('ghc not in /usr/bin, skipping haskell');
+    }
 });
 
 test('a JavaScript program cannot take more memory than its heap limit', {skip: !languageAvailable('javascript')}, async() => {
