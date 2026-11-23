@@ -127,6 +127,47 @@ test('JavaScript and Pascal programs run in batch mode when installed', async(t)
     }
 });
 
+test('Bash, TypeScript, Go, Rust and R programs run in batch mode when installed', async(t) => {
+    if (languageAvailable('bash')) {
+        const sh = await post({lang: 'bash', code: 'read x\necho $((x * 2))\n', stdin: '21\n'});
+        assert.deepEqual(timeless(sh.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('bash not in /usr/bin, skipping bash');
+    }
+    if (languageAvailable('typescript')) {
+        const ts = await post({lang: 'typescript',
+            code: 'import {readFileSync} from "node:fs";\nconst n: number = Number(readFileSync(0, "utf8").trim());\nconsole.log(n * 2);\n',
+            stdin: '21\n'});
+        assert.deepEqual(timeless(ts.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('node >= 22.6 not in /usr/bin, skipping typescript');
+    }
+    if (languageAvailable('go')) {
+        const go = await post({lang: 'go',
+            code: 'package main\nimport "fmt"\nfunc main() { var x int; fmt.Scan(&x); fmt.Println(x * 2) }\n',
+            stdin: '21\n'});
+        assert.deepEqual(timeless(go.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('go not in /usr/bin, skipping go');
+    }
+    if (languageAvailable('rust')) {
+        const rs = await post({lang: 'rust',
+            code: 'use std::io;\nfn main() { let mut s = String::new(); io::stdin().read_line(&mut s).unwrap(); let x: i32 = s.trim().parse().unwrap(); println!("{}", x * 2); }\n',
+            stdin: '21\n'});
+        assert.deepEqual(timeless(rs.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('rustc not in /usr/bin, skipping rust');
+    }
+    if (languageAvailable('r')) {
+        const r = await post({lang: 'r',
+            code: 'x <- as.integer(readLines("stdin", n = 1))\ncat(x * 2, "\\n", sep = "")\n',
+            stdin: '21\n'});
+        assert.deepEqual(timeless(r.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('Rscript not in /usr/bin, skipping r');
+    }
+});
+
 test('a JavaScript program cannot take more memory than its heap limit', {skip: !languageAvailable('javascript')}, async() => {
     const r = await post({lang: 'javascript', code: 'const a = []; for (;;) { a.push(new Array(1e6).fill(1)); }'});
     // V8 reports "heap out of memory": the status memory since 0.8.0.
