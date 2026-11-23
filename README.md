@@ -6,10 +6,12 @@ input in the browser console, as in a terminal: prompts appear before the input,
 of the input (Ctrl+D). C and C++ programs can also run **step by step** under gdb: the browser marks the line that runs
 next and shows the variables of the function.
 
-It also runs programs to their end for grading (`POST /run`, below): C, C++, Java, C#, **Python, JavaScript, Pascal,
-PHP** and SQL. A site can keep grading on [Jobe](https://github.com/trampgeek/jobe), or leave the Jobe settings of
-tiny_codelab empty and use only this server (tiny_codelab newer than 1.12). In examples Python still runs in the
-browser (Pyodide).
+It also runs programs interactively and for grading (`POST /run`, below) across **26 server languages**: C, C++, Java,
+C#, **Python, JavaScript, TypeScript, Pascal, PHP, Bash, Go, Rust, R, Ruby, Lua, Kotlin, Perl, Octave, Julia, Scheme,
+Dart, Scala, Elixir, Swift, Haskell** and SQL (MariaDB). Each language is automatically advertised by `GET /health` only
+when its compiler or runtime is installed in `/usr/bin` (and reachable inside the bubblewrap sandbox). A site can keep
+grading on [Jobe](https://github.com/trampgeek/jobe), or leave the Jobe settings of tiny_codelab empty and use only this
+server (tiny_codelab newer than 1.12). In examples Python still runs in the browser (Pyodide).
 
 ## How it works
 
