@@ -69,7 +69,7 @@ test('the time of a run: seconds with 3 decimals, without the compilation, none 
     assert.equal(slow.data.status, 'ok');
     assert.ok(slow.data.time >= 0.5 && slow.data.time < 5, `time ${slow.data.time}`);
     // A failed or endless program has its time too; a compilation error and a refused request have none.
-    const failed = await post({lang: 'python', code: 'raise SystemExit(3)'});
+    const failed = await post({lang: 'python', code: 'raise ValueError(3)'});
     assert.equal(failed.data.status, 'runtime');
     assert.equal(typeof failed.data.time, 'number');
     const bad = await post({lang: 'c', code: 'int main(void) { return x; }'});
@@ -338,4 +338,68 @@ test('multi-file C compilation: header and extra .c file in /box, cache invalida
     const r2 = await post({lang: 'c', code: main, files: [{name: 'pomoc.h', text: header}, {name: 'pomoc.c', text: impl2}]});
     assert.equal(r2.data.status, 'ok', r2.data.cmpinfo || r2.data.stderr);
     assert.equal(r2.data.stdout, '50\n');
+});
+
+test('Jobe mode: standard error, not the exit code, decides runtime; the runner mode keeps the exit code', async() => {
+    const stderr = '#include <stdio.h>\nint main(void) { fprintf(stderr, "dbg\\n"); printf("5\\n"); return 0; }\n';
+    const exit1 = '#include <stdio.h>\nint main(void) { printf("5\\n"); return 1; }\n';
+    assert.equal((await post({lang: 'c', code: stderr})).data.status, 'runtime');
+    assert.equal((await post({lang: 'c', code: exit1})).data.status, 'ok');
+    assert.equal((await post({lang: 'c', code: stderr, compat: 'runner'})).data.status, 'ok');
+    assert.equal((await post({lang: 'c', code: exit1, compat: 'runner'})).data.status, 'runtime');
+    const py = await post({lang: 'python', code: 'import sys\nprint(5)\nsys.exit(1)\n'});
+    assert.deepEqual([py.data.status, py.data.stdout], ['ok', '5\n']);
+    const pyerr = await post({lang: 'python', code: 'import warnings\nwarnings.warn("old")\nprint(5)\n'});
+    assert.equal(pyerr.data.status, 'runtime');
+    assert.equal((await post({lang: 'c', code: 'x', compat: 'judge'})).data.stderr, 'Unknown compat mode.');
+});
+
+test('Jobe mode: a crash is runtime, a program that sleeps past twice its CPU time is time', async() => {
+    const crash = await post({lang: 'c', code: '#include <stdio.h>\nint main(void) { int *p = 0; *p = 1; return 0; }\n'});
+    assert.equal(crash.data.status, 'runtime');
+    const sleep = await post({lang: 'c', code: '#include <unistd.h>\nint main(void) { sleep(10); return 0; }\n', cputime: 1});
+    assert.equal(sleep.data.status, 'time');
+});
+
+test('Jobe mode: a message of the compiler is a compilation error, and it is not cached', async() => {
+    const gets = '#include <stdio.h>\nchar *gets(char *s);\nint main(void) { char s[9]; gets(s); puts(s); return 0; }\n';
+    for (let i = 0; i < 2; i++) {
+        const r = await post({lang: 'c', code: gets, stdin: 'abc\n'});
+        assert.equal(r.data.status, 'compile');
+        assert.match(r.data.cmpinfo, /gets/);
+    }
+    assert.equal((await post({lang: 'c', code: gets, stdin: 'abc\n', compat: 'runner'})).data.stdout, 'abc\n');
+    const java = 'import java.util.*;\npublic class Main { public static void main(String[] a) { List l = new ArrayList(); ' +
+        'l.add(5); System.out.println(l.get(0)); } }\n';
+    const j = await post({lang: 'java', code: java});
+    assert.equal(j.data.status, 'compile');
+    assert.match(j.data.cmpinfo, /unchecked/);
+});
+
+test('Jobe mode: syntax errors of Python and PHP are compilation errors', async() => {
+    const py = await post({lang: 'python', code: 'print(5\n'});
+    assert.equal(py.data.status, 'compile');
+    assert.match(py.data.cmpinfo, /SyntaxError/);
+    assert.equal((await post({lang: 'python', code: 'print(5\n', compat: 'runner'})).data.status, 'runtime');
+    const php = await post({lang: 'php', code: '<?php\necho 5\n'});
+    assert.equal(php.data.status, 'compile');
+    assert.match(php.data.cmpinfo, /syntax error/i);
+});
+
+test('Jobe mode: PHP without php.ini shows warnings in the output; Python has 1500 MB', async() => {
+    const php = await post({lang: 'php', code: '<?php\necho $x;\necho "5\\n";\n'});
+    assert.equal(php.data.status, 'ok');
+    assert.match(php.data.stdout, /Warning: Undefined variable \$x/);
+    const py = await post({lang: 'python', code: 'b = bytearray(400 * 1024 * 1024)\nprint(len(b))\n'});
+    assert.deepEqual([py.data.status, py.data.stdout], ['ok', '419430400\n']);
+    assert.equal((await post({lang: 'python', code: 'b = bytearray(400 * 1024 * 1024)\n', compat: 'runner'})).data.status,
+        'memory');
+});
+
+test('the memory of a request is the heap of Java', async() => {
+    const code = 'public class Main { public static void main(String[] a) { int[] x = new int[75000000]; ' +
+        'System.out.println(x.length); } }\n';
+    assert.equal((await post({lang: 'java', code})).data.status, 'memory');
+    const big = await post({lang: 'java', code, memory: 1000});
+    assert.deepEqual([big.data.status, big.data.stdout], ['ok', '75000000\n']);
 });

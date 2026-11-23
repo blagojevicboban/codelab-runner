@@ -52,8 +52,8 @@ and `CODELAB_MYSQL_SOCKET` (default `/run/mysqld/mysqld.sock`). Without them SQL
 ## Runs for grading
 
 `POST /run` with `{lang, code, stdin}` runs a program to its end and answers `{status, stdout, stderr, cmpinfo}`, as
-Jobe does (and `time`, below). Optional `cputime` (seconds, at most `CODELAB_CPU_SECONDS`) and `memory` (MB, 16 to 2048; not for Java, C#
-and JavaScript, whose heaps have their own limits) are the limits of a question. It is called by Moodle's server (tiny_codelab `runner_client`), not by browsers: the request carries
+Jobe does (and `time`, below). Optional `cputime` (seconds, at most `CODELAB_CPU_SECONDS`) and `memory` (MB, 16 to 2048; for
+Java, C# and JavaScript the size of the heap, since 0.16.0) are the limits of a question. It is called by Moodle's server (tiny_codelab `runner_client`), not by browsers: the request carries
 `X-CodeLab-Site`, `X-CodeLab-Time`, `X-CodeLab-Nonce` and `X-CodeLab-Signature` = base64url(HMAC-SHA256(secret, time +
 "\n" + nonce + "\n" + body)), valid for 60 seconds and taken once (the nonce). Requests without a nonce (tiny_codelab older
 than 1.12) are signed as time + "\n" + body; `CODELAB_REQUIRE_NONCE=1` refuses them. qtype_codelab grades SQL questions
@@ -84,6 +84,23 @@ installed `compilers` (`gcc`, and `clang` when present).
 Since 0.12.0, C and C++ runs accept optional `sanitize: true` (safe mode: `-fsanitize=address,undefined` with
 `max_allocation_size_mb=256`, linking `codelab_unbuffered.c` instead of `stdbuf`) to report out-of-bounds array
 access, use-after-free, null dereference, division by zero and signed integer overflow with exact source lines.
+
+Since 0.16.0, runs for grading work **as on Jobe** (`compat: "jobe"`, the default), so that a program gets the same
+mark on both servers, also when tiny_codelab's Automatic mode turns to the runner because Jobe does not answer:
+
+- A program that wrote to its standard error failed (`runtime`), whatever its exit code; one that wrote nothing there
+  succeeded, also with `exit(1)`. A crash (a signal) is `runtime`. A program stopped after twice its CPU time on the
+  clock (one that sleeps or waits for input) is `time`.
+- Any message of the compiler of C, C++ and Java is a compilation error (a warning of the linker, such as the one for
+  `gets`, which `-w` does not turn off, or javac's notes). Such compilations are not cached.
+- Python (`py_compile`) and PHP (`php -l`) programs are checked first: a syntax error is `compile`.
+- PHP runs without php.ini (`--no-php-ini`, warnings and notices in the standard output), Python with `-BE`, Java
+  with `-Xrs`.
+- Memory without the request's `memory`: 400 MB (Python 1500 MB), a heap of 200 MB for Java and 512 MB for JavaScript.
+
+`compat: "runner"` gives the behaviour before 0.16.0 (the exit code decides, 256 MB, warnings allowed); interactive
+sessions keep it always. Signed `GET /health` lists the modes (`compat`). The script
+`devtools/codelab-demo/probe-jobe-runner.php` of the plugins compares both servers with 31 small programs.
 
 ## One server for several Moodle sites
 

@@ -32,7 +32,7 @@ import {mysqlConfigured} from './lib/mysql.js';
 import {Session} from './lib/session.js';
 import {NonceList, Secrets, TokenChecker} from './lib/token.js';
 import {BatchQueue} from './lib/queue.js';
-import {runBatch, signedRequest} from './lib/batch.js';
+import {COMPAT, runBatch, signedRequest} from './lib/batch.js';
 import {handleDeploy} from './lib/deploy.js';
 import {clientError, logError} from './lib/errors.js';
 
@@ -100,7 +100,7 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
             res.writeHead(200, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'});
             res.end(JSON.stringify(signed ? {ok: true, languages, version: VERSION, sessions: total, runs: queue.running,
                 queued: queue.queued, versions: Object.fromEntries(languages.map((lang) => [lang, all[lang] || ''])),
-                compilers}
+                compilers, compat: COMPAT}
                 : {ok: true, languages}));
             return;
         }
