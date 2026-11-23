@@ -49,7 +49,7 @@ const post = async(request, secret = SECRET, nonce = randomBytes(12).toString('b
  * @param {Object} data
  * @returns {Object}
  */
-const timeless = ({time, ...rest}) => rest;
+const timeless = ({time, memory, ...rest}) => rest;
 
 test('a C program with its input, as from Jobe', async() => {
     const code = '#include <stdio.h>\nint main(void) { int a, b; scanf("%d %d", &a, &b); printf("%d\\n", a + b); return 0; }\n';
@@ -300,4 +300,26 @@ test('safe mode (ASan/UBSan): catches out-of-bounds array access with line numbe
     assert.equal(r.data.status, 'runtime', r.data.cmpinfo || r.data.stderr);
     assert.match(r.data.stderr, /out of bounds|stack-buffer-overflow/i);
     assert.match(r.data.stderr, /prog\.c:5/);
+});
+
+test('batch run reports peak memory in KB when /usr/bin/time is available', async() => {
+    const code = [
+        '#include <stdio.h>',
+        '#include <stdlib.h>',
+        '#include <string.h>',
+        'int main(void) {',
+        '    size_t n = 16 * 1024 * 1024;',
+        '    char *p = malloc(n);',
+        '    memset(p, 1, n);',
+        '    printf("%d\\n", p[n - 1]);',
+        '    free(p);',
+        '    return 0;',
+        '}',
+    ].join('\n') + '\n';
+    const r = await post({lang: 'c', code});
+    assert.equal(r.code, 200);
+    assert.equal(r.data.status, 'ok');
+    assert.equal(r.data.stdout, '1\n');
+    assert.equal(typeof r.data.memory, 'number');
+    assert.ok(r.data.memory >= 14000, `expected >= 14000 KB, got ${r.data.memory}`);
 });
