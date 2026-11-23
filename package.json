@@ -1,7 +1,7 @@
 {
   "name": "codelab-runner",
-  "version": "0.17.0",
-  "description": "Interactive server of the CodeLab plugins for Moodle: runs programs (C, C++, Java, C#, Python, JavaScript, TypeScript, Pascal, PHP, Bash, Go, Rust, R, SQL) in a sandbox, interactively and for grading.",
+  "version": "0.18.0",
+  "description": "Interactive server of the CodeLab plugins for Moodle: runs programs (C, C++, Java, C#, Python, JavaScript, TypeScript, Pascal, PHP, Bash, Go, Rust, R, Ruby, Lua, Kotlin, Perl, Octave, SQL) in a sandbox, interactively and for grading.",
   "type": "module",
   "main": "server.js",
   "license": "GPL-3.0-or-later",

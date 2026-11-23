@@ -166,6 +166,36 @@ test('Bash, TypeScript, Go, Rust and R programs run in batch mode when installed
     } else {
         t.diagnostic('Rscript not in /usr/bin, skipping r');
     }
+    if (languageAvailable('ruby')) {
+        const rb = await post({lang: 'ruby', code: 'puts gets.to_i * 2\n', stdin: '21\n'});
+        assert.deepEqual(timeless(rb.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('ruby not in /usr/bin, skipping ruby');
+    }
+    if (languageAvailable('lua')) {
+        const lua = await post({lang: 'lua', code: 'print(tonumber(io.read()) * 2)\n', stdin: '21\n'});
+        assert.deepEqual(timeless(lua.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('lua not in /usr/bin, skipping lua');
+    }
+    if (languageAvailable('kotlin')) {
+        const kt = await post({lang: 'kotlin', code: 'fun main() { println(readln().toInt() * 2) }\n', stdin: '21\n'});
+        assert.deepEqual(timeless(kt.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('kotlinc not in /usr/bin, skipping kotlin');
+    }
+    if (languageAvailable('perl')) {
+        const pl = await post({lang: 'perl', code: 'my $x = <STDIN>; chomp $x; print $x * 2, "\\n";\n', stdin: '21\n'});
+        assert.deepEqual(timeless(pl.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('perl not in /usr/bin, skipping perl');
+    }
+    if (languageAvailable('octave')) {
+        const oct = await post({lang: 'octave', code: 'x = scanf("%d", 1); printf("%d\\n", 2 * x);\n', stdin: '21\n'});
+        assert.deepEqual(timeless(oct.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('octave not in /usr/bin, skipping octave');
+    }
 });
 
 test('a JavaScript program cannot take more memory than its heap limit', {skip: !languageAvailable('javascript')}, async() => {
