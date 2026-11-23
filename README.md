@@ -98,6 +98,9 @@ mark on both servers, also when tiny_codelab's Automatic mode turns to the runne
   with `-Xrs`.
 - Memory without the request's `memory`: 400 MB (Python 1500 MB), a heap of 200 MB for Java and 512 MB for JavaScript.
 
+Since 0.16.1, a Java program without a public class is named after its class with `main` (as tiny_codelab names it
+for Jobe), so it runs instead of failing as class `Main`.
+
 `compat: "runner"` gives the behaviour before 0.16.0 (the exit code decides, 256 MB, warnings allowed); interactive
 sessions keep it always. Signed `GET /health` lists the modes (`compat`). The script
 `devtools/codelab-demo/probe-jobe-runner.php` of the plugins compares both servers with 31 small programs.

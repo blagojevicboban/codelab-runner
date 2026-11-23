@@ -403,3 +403,9 @@ test('the memory of a request is the heap of Java', async() => {
     const big = await post({lang: 'java', code, memory: 1000});
     assert.deepEqual([big.data.status, big.data.stdout], ['ok', '75000000\n']);
 });
+
+test('a Java program without a public class runs as its class with main', async() => {
+    const code = 'class Zadatak {\n    public static void main(String[] a) {\n        System.out.println(5);\n    }\n}\n';
+    const r = await post({lang: 'java', code});
+    assert.deepEqual([r.data.status, r.data.stdout], ['ok', '5\n'], r.data.stderr || r.data.cmpinfo);
+});

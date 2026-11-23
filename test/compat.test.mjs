@@ -13,6 +13,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {limitsOf, statusOf} from '../lib/batch.js';
+import {javaClass} from '../lib/sandbox.js';
 
 const run = (fields) => statusOf({exitcode: 0, signal: null, stderr: '', toolong: false, wallStop: false, jobe: true,
     ...fields});
@@ -48,4 +49,13 @@ test('memory limits', () => {
     assert.deepEqual(limitsOf('javascript', undefined, true), {mem: 4096, heap: 512});
     assert.deepEqual(limitsOf('csharp', 1000, true), {mem: 4096, heap: 1000});
     assert.deepEqual(limitsOf('mysql', undefined, true), {mem: 256, heap: null});
+});
+
+test('the class a Java program runs as: the public class, else the class with main', () => {
+    assert.equal(javaClass('import java.util.*;\npublic class Zbir {\n}'), 'Zbir');
+    assert.equal(javaClass('class Helper {}'), 'Main');
+    assert.equal(javaClass('class Zadatak {\n    public static void main(String[] args) {}\n}\n'), 'Zadatak');
+    assert.equal(javaClass('class Tacka { int x; }\nclass App { static public void main(String[] a) {} }\n'), 'App');
+    assert.equal(javaClass('class Pomocna { void f() {} }\nfinal class Glavna {\n  public static void main(String... a) {}\n}\n'),
+        'Glavna');
 });
