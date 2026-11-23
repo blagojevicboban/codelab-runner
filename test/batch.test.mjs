@@ -323,3 +323,19 @@ test('batch run reports peak memory in KB when /usr/bin/time is available', asyn
     assert.equal(typeof r.data.memory, 'number');
     assert.ok(r.data.memory >= 14000, `expected >= 14000 KB, got ${r.data.memory}`);
 });
+
+test('multi-file C compilation: header and extra .c file in /box, cache invalidated on change', async() => {
+    const main = '#include <stdio.h>\n#include "pomoc.h"\nint main(void) { printf("%d\\n", kvadrat(7)); return 0; }\n';
+    const header = 'int kvadrat(int x);\n';
+    const impl1 = 'int kvadrat(int x) { return x * x; }\n';
+    const r1 = await post({lang: 'c', code: main, files: [{name: 'pomoc.h', text: header}, {name: 'pomoc.c', text: impl1}]});
+    assert.equal(r1.code, 200);
+    assert.equal(r1.data.status, 'ok', r1.data.cmpinfo || r1.data.stderr);
+    assert.equal(r1.data.stdout, '49\n');
+
+    // Modifying pomoc.c must invalidate compile cache and reflect the new implementation.
+    const impl2 = 'int kvadrat(int x) { return x * x + 1; }\n';
+    const r2 = await post({lang: 'c', code: main, files: [{name: 'pomoc.h', text: header}, {name: 'pomoc.c', text: impl2}]});
+    assert.equal(r2.data.status, 'ok', r2.data.cmpinfo || r2.data.stderr);
+    assert.equal(r2.data.stdout, '50\n');
+});
