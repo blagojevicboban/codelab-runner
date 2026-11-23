@@ -196,6 +196,46 @@ test('Bash, TypeScript, Go, Rust and R programs run in batch mode when installed
     } else {
         t.diagnostic('octave not in /usr/bin, skipping octave');
     }
+    if (languageAvailable('julia')) {
+        const jl = await post({lang: 'julia', code: 'x = parse(Int, strip(readline()))\nprintln(2 * x)\n', stdin: '21\n'});
+        assert.deepEqual(timeless(jl.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('julia not in /usr/bin, skipping julia');
+    }
+    if (languageAvailable('scheme')) {
+        const scm = await post({lang: 'scheme', code: '(display (* 2 (read))) (newline)\n', stdin: '21\n'});
+        assert.deepEqual(timeless(scm.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('guile not in /usr/bin, skipping scheme');
+    }
+    if (languageAvailable('dart')) {
+        const dart = await post({lang: 'dart',
+            code: 'import "dart:io";\nvoid main() { print(int.parse(stdin.readLineSync()!.trim()) * 2); }\n', stdin: '21\n'});
+        assert.deepEqual(timeless(dart.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('dart not in /usr/bin, skipping dart');
+    }
+    if (languageAvailable('scala')) {
+        const sc = await post({lang: 'scala',
+            code: 'object Main extends App { println(scala.io.StdIn.readInt() * 2) }\n', stdin: '21\n'});
+        assert.deepEqual(timeless(sc.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('scalac not in /usr/bin, skipping scala');
+    }
+    if (languageAvailable('elixir')) {
+        const ex = await post({lang: 'elixir',
+            code: 'IO.gets("") |> String.trim() |> String.to_integer() |> Kernel.*(2) |> IO.puts()\n', stdin: '21\n'});
+        assert.deepEqual(timeless(ex.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('elixir not in /usr/bin, skipping elixir');
+    }
+    if (languageAvailable('swift')) {
+        const sw = await post({lang: 'swift',
+            code: 'if let s = readLine(), let x = Int(s) { print(x * 2) }\n', stdin: '21\n'});
+        assert.deepEqual(timeless(sw.data), {status: 'ok', stdout: '42\n', stderr: '', cmpinfo: ''});
+    } else {
+        t.diagnostic('swiftc not in /usr/bin, skipping swift');
+    }
 });
 
 test('a JavaScript program cannot take more memory than its heap limit', {skip: !languageAvailable('javascript')}, async() => {
