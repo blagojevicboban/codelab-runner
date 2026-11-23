@@ -231,3 +231,18 @@ test('no memory data without pointers', async() => {
     assert.ok(r.pauses.length > 0);
     assert.ok(r.pauses.every((p) => p.targets === undefined && p.stack.every((f) => f.addrs === undefined)));
 });
+
+test('memory leak detection in debug mode reports unfreed malloc blocks and clears when freed', async() => {
+    const leaky = '#include <stdlib.h>\nint main(void)\n{\n    int *p = malloc(40);\n    int *q = calloc(2, 8);\n    free(q);\n    return p == NULL;\n}\n';
+    const r1 = await debug('c', leaky, () => [{type: 'continue'}]);
+    assert.equal(r1.exit.status, 'ok');
+    assert.ok(Array.isArray(r1.exit.leaks), JSON.stringify(r1.exit));
+    assert.equal(r1.exit.leaks.length, 1);
+    assert.equal(r1.exit.leaks[0].size, 40);
+    assert.match(r1.exit.leaks[0].addr, /^0x[0-9a-f]+$/);
+
+    const clean = '#include <stdlib.h>\nint main(void)\n{\n    int *p = malloc(40);\n    free(p);\n    return 0;\n}\n';
+    const r2 = await debug('c', clean, () => [{type: 'continue'}]);
+    assert.equal(r2.exit.status, 'ok');
+    assert.equal(r2.exit.leaks, undefined);
+});
