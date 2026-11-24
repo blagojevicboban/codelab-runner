@@ -42,7 +42,7 @@ after(() => server.close());
 const debug = (lang, code, onPause, stdin = '', extra = {}) => new Promise((resolve, reject) => {
     const token = sign({u: 9, s: 'test', e: Math.floor(Date.now() / 1000) + 60, n: randomUUID()}, SECRET);
     const ws = new WebSocket(`${base}?token=${token}`);
-    const result = {pauses: [], out: '', exit: undefined};
+    const result = {pauses: [], watches: [], out: '', exit: undefined};
     ws.onopen = () => ws.send(JSON.stringify({type: 'start', lang, code, stdin, debug: true, ...extra}));
     ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
@@ -50,6 +50,13 @@ const debug = (lang, code, onPause, stdin = '', extra = {}) => new Promise((reso
             result.pauses.push(message);
             for (const reply of onPause(message, result.pauses.length - 1)) {
                 ws.send(JSON.stringify(reply));
+            }
+        } else if (message.type === 'watches') {
+            result.watches.push(message.values);
+            if (extra.onWatches) {
+                for (const reply of extra.onWatches(message.values)) {
+                    ws.send(JSON.stringify(reply));
+                }
             }
         } else if (message.type === 'out') {
             result.out += message.data;
@@ -175,6 +182,53 @@ test('breakpoints changed while paused', async() => {
     const r = await debug('c', REC, (p, n) => (n === 0 ? [{type: 'breakpoints', lines: [12]}, {type: 'continue'}]
         : [{type: 'continue'}]), '', {step: false, breakpoints: [11]});
     assert.deepEqual(r.pauses.map((p) => p.line), [11, 12]);
+    assert.equal(r.exit.status, 'ok');
+});
+
+test('conditional breakpoints: stop only when the condition holds and update while paused', async() => {
+    const loop = '#include <stdio.h>\n' +
+        'int main(void)\n' +
+        '{\n' +
+        '    int s = 0;\n' +
+        '    for (int i = 1; i <= 10; i++) {\n' +
+        '        s += i;\n' +
+        '    }\n' +
+        '    printf("%d\\n", s);\n' +
+        '    return 0;\n' +
+        '}\n';
+    const r = await debug('c', loop, (p, n) => (n === 0
+        ? [{type: 'breakpoints', lines: [{line: 6, condition: 'i == 9'}]}, {type: 'continue'}]
+        : [{type: 'continue'}]), '', {step: false, breakpoints: [{line: 6, condition: 'i == 4'}]});
+    assert.equal(r.pauses.length, 2);
+    assert.deepEqual(r.pauses.map((p) => p.line), [6, 6]);
+    assert.deepEqual(r.pauses.map((p) => p.vars.find((v) => v.name === 'i')?.value), ['4', '9']);
+    assert.equal(r.out, '55\n');
+    assert.equal(r.exit.status, 'ok');
+});
+
+test('watch expressions: evaluated on pause and updated live while paused', async() => {
+    const loop = '#include <stdio.h>\n' +
+        'int main(void)\n' +
+        '{\n' +
+        '    int s = 0;\n' +
+        '    for (int i = 1; i <= 5; i++) {\n' +
+        '        s += i;\n' +
+        '    }\n' +
+        '    printf("%d\\n", s);\n' +
+        '    return 0;\n' +
+        '}\n';
+    const r = await debug('c', loop, (p, n) => (n === 0
+        ? [{type: 'watches', expressions: ['s * 2', 'nonexistent_var']}]
+        : [{type: 'continue'}]), '', {
+        step: false,
+        breakpoints: [{line: 6, condition: 'i == 4'}],
+        watches: ['i * 10', 's + i'],
+        onWatches: () => [{type: 'continue'}],
+    });
+    assert.equal(r.pauses.length, 1);
+    assert.deepEqual(r.pauses[0].watches, [{expr: 'i * 10', value: '40'}, {expr: 's + i', value: '10'}]);
+    assert.deepEqual(r.watches[0], [{expr: 's * 2', value: '12'}, {expr: 'nonexistent_var', value: null}]);
+    assert.equal(r.out, '15\n');
     assert.equal(r.exit.status, 'ok');
 });
 
