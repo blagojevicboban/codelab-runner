@@ -232,6 +232,29 @@ test('watch expressions: evaluated on pause and updated live while paused', asyn
     assert.equal(r.exit.status, 'ok');
 });
 
+test('multi-file C debugging: breakpoint in companion file and stack frames across files', async() => {
+    const main = '#include <stdio.h>\n#include "math_utils.h"\nint main(void)\n{\n    printf("%d\\n", square(6));\n    return 0;\n}\n';
+    const files = [
+        {name: 'math_utils.h', text: 'int square(int n);\n'},
+        {name: 'math_utils.c', text: '#include "math_utils.h"\nint square(int n)\n{\n    int r = n * n;\n    return r;\n}\n'},
+    ];
+    const r = await debug('c', main, () => [{type: 'continue'}], '', {
+        step: false,
+        files,
+        breakpoints: [{line: 4, file: 'math_utils.c'}],
+    });
+    assert.equal(r.pauses.length, 1);
+    assert.equal(r.pauses[0].file, 'math_utils.c');
+    assert.equal(r.pauses[0].line, 4);
+    assert.equal(r.pauses[0].func, 'square');
+    assert.equal(r.pauses[0].stack.length, 2);
+    assert.equal(r.pauses[0].stack[0].file, 'math_utils.c');
+    assert.equal(r.pauses[0].stack[1].func, 'main');
+    assert.equal(r.pauses[0].stack[1].file, undefined);
+    assert.equal(r.out, '36\n');
+    assert.equal(r.exit.status, 'ok');
+});
+
 test('pointer fields of a structure value, at its own level', async() => {
     const {pointerFields} = await import('../lib/session.js');
     assert.deepEqual(pointerFields('{data = 1, next = 0x5555, name = "a, b = 0x1", in = {p = 0x9}}'), [['next', '0x5555']]);
