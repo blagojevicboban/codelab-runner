@@ -14,7 +14,7 @@ import {after, before, test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
 import {startServer} from '../server.js';
-import {deployCommand} from '../lib/deploy.js';
+import {ANALYZERS, deployCommand} from '../lib/deploy.js';
 
 const HOOK_SECRET = 'webhook-secret-for-tests';
 let server;
@@ -67,10 +67,12 @@ test('the command verifies the signature of the tag and installs without scripts
     delete process.env.CODELAB_DEPLOY_COMMAND;
     try {
         const command = deployCommand('push', {ref: 'refs/tags/v0.5.1'});
-        assert.match(command, /git verify-tag v0\.5\.1 && git checkout --detach v0\.5\.1 && npm ci --omit=dev --ignore-scripts$/);
+        assert.ok(command.endsWith('git verify-tag v0.5.1 && git checkout --detach v0.5.1 && npm ci --omit=dev --ignore-scripts && '
+            + ANALYZERS), command);
+        assert.match(ANALYZERS, /RestoreLockedMode=true/);
         assert.equal(deployCommand('push', {ref: 'refs/tags/latest'}), null);
         process.env.CODELAB_DEPLOY_ON = 'branch';
-        assert.match(deployCommand('push', {ref: 'refs/heads/main'}), /^git pull --ff-only && npm ci .*--ignore-scripts$/);
+        assert.ok(deployCommand('push', {ref: 'refs/heads/main'}).startsWith('git pull --ff-only && npm ci --omit=dev --ignore-scripts && '));
         assert.equal(deployCommand('push', {ref: 'refs/tags/v0.5.1'}), null);
     } finally {
         delete process.env.CODELAB_DEPLOY_ON;

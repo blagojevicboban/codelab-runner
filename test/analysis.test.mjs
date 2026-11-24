@@ -33,7 +33,8 @@ let analyzer;
 
 before(async() => {
     analyzer = fake();
-    server = await startServer({port: 0, host: '127.0.0.1', secret: SECRET, analyzer});
+    server = await startServer({port: 0, host: '127.0.0.1', secret: SECRET, analyzer,
+        javaAnalyzer: fake({name: 'java'})});
     port = server.address().port;
 });
 after(() => {
@@ -128,9 +129,12 @@ test('/analysis answers with a token for the language service', async() => {
     ws.close();
 });
 
-test('/analysis refuses a session token, another language and a used token; /session refuses an analysis token', async() => {
+test('/analysis takes C# and Java, refuses a session token, another language and a used token; /session refuses an analysis token', async() => {
     assert.equal(await connect('/analysis', token({p: undefined})), null);
-    assert.equal(await connect('/analysis', token({l: 'java'})), null);
+    assert.equal(await connect('/analysis', token({l: 'python'})), null);
+    const java = await connect('/analysis', token({l: 'java'}));
+    assert.ok(java);
+    java.close();
     const once = token();
     const ws = await connect('/analysis', once);
     assert.ok(ws);
@@ -154,7 +158,7 @@ test('/analysis allows at most four connections of a user', async() => {
 test('a server without the analyzer refuses /analysis and keeps running', async() => {
     const before = process.env.CODELAB_ROSLYN;
     process.env.CODELAB_ROSLYN = 'off';
-    const plain = await startServer({port: 0, host: '127.0.0.1', secret: SECRET});
+    const plain = await startServer({port: 0, host: '127.0.0.1', secret: SECRET, javaAnalyzer: new Analyzer({dll: ''})});
     process.env.CODELAB_ROSLYN = before ?? '';
     if (before === undefined) {
         delete process.env.CODELAB_ROSLYN;

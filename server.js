@@ -35,7 +35,7 @@ import {BatchQueue} from './lib/queue.js';
 import {COMPAT, runBatch, signedRequest} from './lib/batch.js';
 import {handleDeploy} from './lib/deploy.js';
 import {clientError, logError} from './lib/errors.js';
-import {Analyzer, cleanRequest} from './lib/analysis.js';
+import {Analyzer, cleanRequest, javaAnalyzer} from './lib/analysis.js';
 
 /** Version of the runner (package.json). */
 /** Largest body of a run for grading (program and input), CODELAB_RUN_BODY_MB. */
@@ -69,10 +69,11 @@ export const isMain = (moduleUrl, scriptPath) => Boolean(scriptPath) && moduleUr
  * @param {function({type: string, site: string}): void} [options.onRun] called when a session or batch run starts
  * @param {function(import('node:http').IncomingMessage, import('node:http').ServerResponse, {secrets: Object}): boolean} [options.onRequest] extra HTTP routes
  * @param {Analyzer} [options.analyzer] the C# language service (default: the Roslyn analyzer of this server, if published)
+ * @param {Analyzer} [options.javaAnalyzer] the Java language service (default: built from java-analyzer/ when javac is there)
  * @returns {Promise<import('node:http').Server>}
  */
 export const startServer = ({port, host, secret, secrets, exit = () => process.exit(75),
-    secretsResolver, allowOrigin, authorize, onRun, onRequest, analyzer} = {}) => {
+    secretsResolver, allowOrigin, authorize, onRun, onRequest, analyzer, javaAnalyzer: java} = {}) => {
     const theSecrets = secretsResolver ?? new Secrets(secret ?? process.env.CODELAB_SECRET, secrets ?? process.env.CODELAB_SECRETS);
     const checker = new TokenChecker(theSecrets);
     const runNonces = new NonceList();
@@ -88,8 +89,11 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
     /** @type {Map<string, number>} open sessions by site */
     const siteOpen = new Map();
     let total = 0;
-    // The C# language service (lib/analysis.js): its connections are not sessions, run nothing and use no quota.
-    const theAnalyzer = analyzer ?? new Analyzer();
+    // The language services of C# and Java (lib/analysis.js): their connections are not sessions, run nothing and use
+    // no quota.
+    /** @type {Object<string, Analyzer>} the language services by language */
+    const analyzers = {csharp: analyzer ?? new Analyzer(), java: java ?? javaAnalyzer()};
+    const anyAnalyzer = () => Object.values(analyzers).some((a) => a.available());
     const maxAnalysis = Number(process.env.CODELAB_MAX_ANALYSIS || 200);
     const userAnalysis = Number(process.env.CODELAB_USER_ANALYSIS || 4);
     /** @type {Map<string, number>} open analysis connections by site and user */
@@ -97,11 +101,12 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
     let analysisTotal = 0;
 
     /**
-     * A connection of the C# language service: a token with p = analysis and l = csharp, at most userAnalysis per
+     * A connection of a language service: a token with p = analysis and l = csharp or java, at most userAnalysis per
      * user, requests of at most 20 a second, closed after 30 minutes without one.
      */
     const openAnalysis = (req, socket, head, payload, refuse) => {
-        if (payload.p !== 'analysis' || payload.l !== 'csharp') {
+        const theAnalyzer = Object.prototype.hasOwnProperty.call(analyzers, payload.l) ? analyzers[payload.l] : null;
+        if (payload.p !== 'analysis' || !theAnalyzer?.available()) {
             return refuse(401, 'Unauthorized');
         }
         const site = String(payload.s || '');
@@ -172,7 +177,7 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
                 [['gcc', all.c || ''], ['clang', all.clang || '']].filter(([, v]) => v)
             );
             res.writeHead(200, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'});
-            const analysis = theAnalyzer.available() && languages.includes('csharp') ? ['csharp'] : [];
+            const analysis = Object.keys(analyzers).filter((lang) => analyzers[lang].available() && languages.includes(lang));
             res.end(JSON.stringify(signed ? {ok: true, languages, analysis, version: VERSION, sessions: total,
                 runs: queue.running, queued: queue.queued,
                 versions: Object.fromEntries(languages.map((lang) => [lang, all[lang] || ''])), compilers, compat: COMPAT,
@@ -269,7 +274,7 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
             socket.end(`HTTP/1.1 ${code} ${text}\r\nConnection: close\r\n\r\n`);
         };
         const url = new URL(req.url, 'http://localhost');
-        if (url.pathname !== '/session' && !(url.pathname === '/analysis' && theAnalyzer.available())) {
+        if (url.pathname !== '/session' && !(url.pathname === '/analysis' && anyAnalyzer())) {
             return refuse(404, 'Not Found');
         }
         const payload = checker.check(url.searchParams.get('token'));

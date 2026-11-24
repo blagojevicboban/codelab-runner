@@ -7,7 +7,7 @@ version. It is distributed WITHOUT ANY WARRANTY; see <http://www.gnu.org/license
 
 C# language service of the runner (lib/analysis.js): Roslyn with the reference assemblies and the XML documentation of
 .NET Framework 4.7.2, the API that Mono 6.8 (mcs, used for running and grading) offers, and C# 7.3.
-Build: dotnet publish -c Release -o publish
+Build: dotnet publish -c Release -o publish (the deploy adds -p:RestoreLockedMode=true)
 
 @copyright  2026 Boban Blagojević
 @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -27,6 +27,8 @@ Build: dotnet publish -c Release -o publish
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <!-- The languages of Roslyn's own messages: the satellite assemblies of these are published. -->
     <SatelliteResourceLanguages>cs;de;es;fr;it;ja;ko;pl;pt-BR;ru;tr;zh-Hans;zh-Hant</SatelliteResourceLanguages>
+    <!-- packages.lock.json pins every package with its hash; the deploy on the server restores in locked mode. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <ItemGroup>

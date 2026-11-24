@@ -51,7 +51,7 @@ Query OK, errors with their line). The database is dropped at the end. Create th
 `sudo bash deploy/mariadb-admin.sh <password>` and set `CODELAB_MYSQL_USER=codelab_admin`, `CODELAB_MYSQL_PASSWORD`
 and `CODELAB_MYSQL_SOCKET` (default `/run/mysqld/mysqld.sock`). Without them SQL is not offered.
 
-## C# language service (Roslyn)
+## Language services: C# (Roslyn) and Java
 
 With the .NET 8 runtime on the server and the analyzer in `roslyn/` published, the runner also answers the C# editors
 of tiny_codelab 1.26 or newer while the reader types: completions of the real members of every type, the signatures of a
@@ -70,7 +70,16 @@ sudo apt-get install dotnet-sdk-8.0      # on a build machine; the server needs 
 cd roslyn && dotnet publish -c Release -o publish
 ```
 
-`GET /health` lists `analysis: ["csharp"]` when the analyzer is published. Allow about 1 GB more in `MemoryMax` of the
+The Java service (tiny_codelab 1.27 or newer) does the same for Java with the compiler of the server's JDK used as a
+library (`java-analyzer/JavaAnalyzer.java`, no other dependency), with the release of the JDK that runs and grades the
+programs. The runner builds it with `javac` with the first request (into the temporary folder, once per version of the
+source) and runs it in bubblewrap like the C# analyzer. The tooltips show the Javadoc of the JDK from its `src.zip`:
+
+```sh
+sudo apt-get install --no-install-recommends openjdk-21-source
+```
+
+`GET /health` lists `analysis: ["csharp", "java"]` for the services that are there. Allow about 1 GB more in `MemoryMax` of the
 systemd unit (the heap of the analyzer is `CODELAB_ROSLYN_HEAP_MB`). Without the analyzer, or with
 `CODELAB_ROSLYN=off`, the editors keep their built-in typing help.
 
@@ -203,7 +212,9 @@ whether the server answers.
 Set `CODELAB_DEPLOY_SECRET` and add a webhook to the repository (Settings > Webhooks): payload URL
 `https://<runner>/deploy`, content type `application/json`, the same secret, only the push event. On a push of a release
 tag (`v1.2.3`) the runner runs `git fetch --tags && git verify-tag <tag> && git checkout --detach <tag> && npm ci
---omit=dev --ignore-scripts` in its folder, waits until the open sessions end (at most `CODELAB_DEPLOY_WAIT`, 60 s) and
+--omit=dev --ignore-scripts` in its folder, then, when the server has the .NET SDK, builds the C# analyzer with the
+packages and hashes of `roslyn/packages.lock.json` (`dotnet publish ... -p:RestoreLockedMode=true`; the Java analyzer
+is built by the server itself), waits until the open sessions end (at most `CODELAB_DEPLOY_WAIT`, 60 s) and
 exits; systemd starts the new version. Pushes to branches and unsigned tags change nothing. The folder must belong to
 the server's user. Without the secret `/deploy` answers 404.
 
@@ -214,7 +225,7 @@ The tag is checked with the public key of the person who releases, e.g. an SSH s
 git config --global gpg.format ssh && git config --global user.signingkey ~/.ssh/id_ed25519.pub
 git tag -s v0.6.0 -m "CodeLab runner 0.6.0" && git push origin v0.6.0
 # On the server, as the server's user, in the runner's folder: trust only that key.
-echo "you@example.org ssh-ed25519 AAAA..." > ~/.config/git/allowed_signers
+echo 'you@example.org namespaces="git" ssh-ed25519 AAAA...' > ~/.config/git/allowed_signers
 git config gpg.format ssh && git config gpg.ssh.allowedSignersFile ~/.config/git/allowed_signers
 ```
 
@@ -253,7 +264,9 @@ git config gpg.format ssh && git config gpg.ssh.allowedSignersFile ~/.config/git
 | `CODELAB_ROSLYN_IDLE_MIN` | 30 | minutes without requests before the analyzer stops (0: never) |
 | `CODELAB_ROSLYN_TIMEOUT` | 8 | seconds a request waits for its answer |
 | `CODELAB_ROSLYN_SANDBOX` | 1 | 0: start the analyzer without bubblewrap (development) |
-| `CODELAB_MAX_ANALYSIS`, `CODELAB_USER_ANALYSIS` | 200, 4 | connections of the language service on the server and of one user |
+| `CODELAB_JAVA_ANALYZER` | on when `javac` is there | `off` turns the Java service off |
+| `CODELAB_JAVA_ANALYZER_HEAP_MB`, `CODELAB_JAVA_ANALYZER_TIMEOUT` | 384, 10 | heap of the Java analyzer, seconds a request waits |
+| `CODELAB_MAX_ANALYSIS`, `CODELAB_USER_ANALYSIS` | 200, 4 | connections of the language services on the server and of one user |
 
 Each open session is one compiled program and one process (a JVM for Java, Mono for C#). 30 students at once need about
 1 GB of memory for C and C++, more for Java and C#.
@@ -271,7 +284,7 @@ vars}]}` (the student's frames, innermost first),
 `{type: "exit", status, code, signal}` (status `ok`, `runtime`, `time`,
 `memory`, `toolong` or `stopped`), `{type: "error", message}` (with `reason` when a hook refused the session).
 
-The language service (`/analysis`): the client sends `{id, op, code, files: [{name, code}], line, column, item,
+The language services (`/analysis`, token with `l` csharp or java): the client sends `{id, op, code, files: [{name, code}], line, column, item,
 culture}` with `op` one of `complete`, `describe`, `signatures`, `hover` and `diagnostics` (line and column 1-based), at
 most 20 a second, and gets `{id, items}`, `{id, text}`, `{id, signatures, active, parameter}`,
 `{id, markdown, line, column, endLine, endColumn}` or `{id, items: [{file, severity, code, message, line, column, endLine,
