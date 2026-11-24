@@ -51,6 +51,29 @@ Query OK, errors with their line). The database is dropped at the end. Create th
 `sudo bash deploy/mariadb-admin.sh <password>` and set `CODELAB_MYSQL_USER=codelab_admin`, `CODELAB_MYSQL_PASSWORD`
 and `CODELAB_MYSQL_SOCKET` (default `/run/mysqld/mysqld.sock`). Without them SQL is not offered.
 
+## C# language service (Roslyn)
+
+With the .NET 8 runtime on the server and the analyzer in `roslyn/` published, the runner also answers the C# editors
+of tiny_codelab 1.26 or newer while the reader types: completions of the real members of every type, the signatures of a
+call, tooltips with the documentation of .NET and the errors of the compiler. The program is checked as C# 7.3 against
+the reference assemblies and the XML documentation of .NET Framework 4.7.2, the API that Mono's `mcs` (running and
+grading, also on Jobe) offers, so what the editor accepts also compiles. The program is only analyzed, never run.
+
+One process serves every reader (a few hundred MB, not one per student): it starts with the first request, runs in
+bubblewrap without network or writable folders, answers in tens of milliseconds and stops after
+`CODELAB_ROSLYN_IDLE_MIN` minutes without requests. Readers connect to `/analysis` with a token from Moodle
+(`tiny_codelab_analysis`, `p: "analysis"`, `l: "csharp"`); such a token runs no program, a connection uses no quota of
+runs, and a user may have four.
+
+```sh
+sudo apt-get install dotnet-sdk-8.0      # on a build machine; the server needs only dotnet-runtime-8.0
+cd roslyn && dotnet publish -c Release -o publish
+```
+
+`GET /health` lists `analysis: ["csharp"]` when the analyzer is published. Allow about 1 GB more in `MemoryMax` of the
+systemd unit (the heap of the analyzer is `CODELAB_ROSLYN_HEAP_MB`). Without the analyzer, or with
+`CODELAB_ROSLYN=off`, the editors keep their built-in typing help.
+
 ## Runs for grading
 
 `POST /run` with `{lang, code, stdin}` runs a program to its end and answers `{status, stdout, stderr, cmpinfo}`, as
@@ -224,6 +247,13 @@ git config gpg.format ssh && git config gpg.ssh.allowedSignersFile ~/.config/git
 | `CODELAB_CACHE` | `codelab-cache` in `CODELAB_TMP` | folder of the cache (outside the sandbox; oldest entries go first) |
 | `CODELAB_HIDE` | `/etc/codelab-runner.env` | files a program sees empty, comma separated |
 | `CODELAB_DEPLOY_ON`, `CODELAB_DEPLOY_VERIFY` | tag, 1 | what the webhook deploys (see above) |
+| `CODELAB_ROSLYN` | `roslyn/publish/CodeLab.Roslyn.dll` | the C# analyzer, or `off` |
+| `CODELAB_DOTNET`, `DOTNET_ROOT` | `dotnet` | the .NET 8 runtime that runs the analyzer |
+| `CODELAB_ROSLYN_HEAP_MB` | 768 | heap of the analyzer |
+| `CODELAB_ROSLYN_IDLE_MIN` | 30 | minutes without requests before the analyzer stops (0: never) |
+| `CODELAB_ROSLYN_TIMEOUT` | 8 | seconds a request waits for its answer |
+| `CODELAB_ROSLYN_SANDBOX` | 1 | 0: start the analyzer without bubblewrap (development) |
+| `CODELAB_MAX_ANALYSIS`, `CODELAB_USER_ANALYSIS` | 200, 4 | connections of the language service on the server and of one user |
 
 Each open session is one compiled program and one process (a JVM for Java, Mono for C#). 30 students at once need about
 1 GB of memory for C and C++, more for Java and C#.
@@ -240,6 +270,12 @@ Server to client: `{type: "compiling"}`, `{type: "compile", ok: false, output}`,
 vars}]}` (the student's frames, innermost first),
 `{type: "exit", status, code, signal}` (status `ok`, `runtime`, `time`,
 `memory`, `toolong` or `stopped`), `{type: "error", message}` (with `reason` when a hook refused the session).
+
+The language service (`/analysis`): the client sends `{id, op, code, files: [{name, code}], line, column, item,
+culture}` with `op` one of `complete`, `describe`, `signatures`, `hover` and `diagnostics` (line and column 1-based), at
+most 20 a second, and gets `{id, items}`, `{id, text}`, `{id, signatures, active, parameter}`,
+`{id, markdown, line, column, endLine, endColumn}` or `{id, items: [{file, severity, code, message, line, column, endLine,
+endColumn}]}`; `{id, error}` or `{id, busy: true}` when there is no answer.
 
 In step mode the program is compiled with `-g -O0` and runs under `gdb --interpreter=mi3`; its input and output go
 through FIFOs in its folder. A step that goes into the C library (printf, scanf) returns to the student's code at once,

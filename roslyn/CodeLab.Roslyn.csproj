@@ -1,0 +1,47 @@
+<!--
+This file is part of CodeLab runner, the interactive server of the CodeLab plugins for Moodle.
+
+CodeLab runner is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
+License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later
+version. It is distributed WITHOUT ANY WARRANTY; see <http://www.gnu.org/licenses/>.
+
+C# language service of the runner (lib/analysis.js): Roslyn with the reference assemblies and the XML documentation of
+.NET Framework 4.7.2, the API that Mono 6.8 (mcs, used for running and grading) offers, and C# 7.3.
+Build: dotnet publish -c Release -o publish
+
+@copyright  2026 Boban Blagojević
+@license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>CodeLab.Roslyn</AssemblyName>
+    <RootNamespace>CodeLab.Roslyn</RootNamespace>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <TieredCompilation>true</TieredCompilation>
+    <ServerGarbageCollector>false</ServerGarbageCollector>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <!-- The languages of Roslyn's own messages: the satellite assemblies of these are published. -->
+    <SatelliteResourceLanguages>cs;de;es;fr;it;ja;ko;pl;pt-BR;ru;tr;zh-Hans;zh-Hant</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="4.11.0" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3"
+                      GeneratePathProperty="true" PrivateAssets="all" ExcludeAssets="all" />
+  </ItemGroup>
+
+  <!-- The reference assemblies the programs are checked against, with their XML documentation (the tooltips). -->
+  <ItemGroup>
+    <RefAssembly Include="mscorlib;System;System.Core;System.Xml;System.Xml.Linq;System.Data;System.Numerics" />
+    <None Include="@(RefAssembly->'$(PkgMicrosoft_NETFramework_ReferenceAssemblies_net472)/build/.NETFramework/v4.7.2/%(Identity).dll')"
+          Link="refs/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="@(RefAssembly->'$(PkgMicrosoft_NETFramework_ReferenceAssemblies_net472)/build/.NETFramework/v4.7.2/%(Identity).xml')"
+          Link="refs/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

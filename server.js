@@ -35,6 +35,7 @@ import {BatchQueue} from './lib/queue.js';
 import {COMPAT, runBatch, signedRequest} from './lib/batch.js';
 import {handleDeploy} from './lib/deploy.js';
 import {clientError, logError} from './lib/errors.js';
+import {Analyzer, cleanRequest} from './lib/analysis.js';
 
 /** Version of the runner (package.json). */
 /** Largest body of a run for grading (program and input), CODELAB_RUN_BODY_MB. */
@@ -67,10 +68,11 @@ export const isMain = (moduleUrl, scriptPath) => Boolean(scriptPath) && moduleUr
  * @param {function({type: string, site: string, activeSiteSessions: number}): {ok: boolean, code?: number, reason?: string}} [options.authorize] pre-run check
  * @param {function({type: string, site: string}): void} [options.onRun] called when a session or batch run starts
  * @param {function(import('node:http').IncomingMessage, import('node:http').ServerResponse, {secrets: Object}): boolean} [options.onRequest] extra HTTP routes
+ * @param {Analyzer} [options.analyzer] the C# language service (default: the Roslyn analyzer of this server, if published)
  * @returns {Promise<import('node:http').Server>}
  */
 export const startServer = ({port, host, secret, secrets, exit = () => process.exit(75),
-    secretsResolver, allowOrigin, authorize, onRun, onRequest} = {}) => {
+    secretsResolver, allowOrigin, authorize, onRun, onRequest, analyzer} = {}) => {
     const theSecrets = secretsResolver ?? new Secrets(secret ?? process.env.CODELAB_SECRET, secrets ?? process.env.CODELAB_SECRETS);
     const checker = new TokenChecker(theSecrets);
     const runNonces = new NonceList();
@@ -86,6 +88,78 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
     /** @type {Map<string, number>} open sessions by site */
     const siteOpen = new Map();
     let total = 0;
+    // The C# language service (lib/analysis.js): its connections are not sessions, run nothing and use no quota.
+    const theAnalyzer = analyzer ?? new Analyzer();
+    const maxAnalysis = Number(process.env.CODELAB_MAX_ANALYSIS || 200);
+    const userAnalysis = Number(process.env.CODELAB_USER_ANALYSIS || 4);
+    /** @type {Map<string, number>} open analysis connections by site and user */
+    const analysisOpen = new Map();
+    let analysisTotal = 0;
+
+    /**
+     * A connection of the C# language service: a token with p = analysis and l = csharp, at most userAnalysis per
+     * user, requests of at most 20 a second, closed after 30 minutes without one.
+     */
+    const openAnalysis = (req, socket, head, payload, refuse) => {
+        if (payload.p !== 'analysis' || payload.l !== 'csharp') {
+            return refuse(401, 'Unauthorized');
+        }
+        const site = String(payload.s || '');
+        const auth = authorize ? authorize({type: 'analysis', site, activeSiteSessions: siteOpen.get(site) || 0}) : {ok: true};
+        if (!auth.ok) {
+            return refuse(auth.code === 429 ? 429 : 403, auth.code === 429 ? 'Too Many Requests' : 'Forbidden');
+        }
+        const who = `${site}/${payload.u}`;
+        if (analysisTotal >= maxAnalysis || (analysisOpen.get(who) || 0) >= userAnalysis) {
+            return refuse(429, 'Too Many Requests');
+        }
+        analysisTotal++;
+        analysisOpen.set(who, (analysisOpen.get(who) || 0) + 1);
+        return wss.handleUpgrade(req, socket, head, (ws) => {
+            let window = Date.now();
+            let count = 0;
+            let idle = null;
+            const keepAlive = () => {
+                clearTimeout(idle);
+                idle = setTimeout(() => ws.close(4001, 'idle'), 30 * 60000);
+                idle.unref?.();
+            };
+            keepAlive();
+            ws.on('message', async(data) => {
+                let message;
+                try {
+                    message = JSON.parse(data.toString('utf8'));
+                } catch {
+                    message = null;
+                }
+                const id = Number.isInteger(message?.id) ? message.id : 0;
+                const send = (answer) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({id, ...answer}));
+                const now = Date.now();
+                if (now - window > 1000) {
+                    window = now;
+                    count = 0;
+                }
+                if (++count > 20) {
+                    return send({busy: true});
+                }
+                keepAlive();
+                const request = cleanRequest(message);
+                if (!request) {
+                    return send({error: 'request'});
+                }
+                const answer = await theAnalyzer.ask(request);
+                return send(answer ?? {error: 'analyzer'});
+            });
+            ws.on('close', () => {
+                clearTimeout(idle);
+                analysisTotal--;
+                analysisOpen.set(who, analysisOpen.get(who) - 1);
+                if (!analysisOpen.get(who)) {
+                    analysisOpen.delete(who);
+                }
+            });
+        });
+    };
 
     const server = createServer(async(req, res) => {
         if (req.method === 'GET' && req.url === '/health') {
@@ -98,10 +172,12 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
                 [['gcc', all.c || ''], ['clang', all.clang || '']].filter(([, v]) => v)
             );
             res.writeHead(200, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'});
-            res.end(JSON.stringify(signed ? {ok: true, languages, version: VERSION, sessions: total, runs: queue.running,
-                queued: queue.queued, versions: Object.fromEntries(languages.map((lang) => [lang, all[lang] || ''])),
-                compilers, compat: COMPAT}
-                : {ok: true, languages}));
+            const analysis = theAnalyzer.available() && languages.includes('csharp') ? ['csharp'] : [];
+            res.end(JSON.stringify(signed ? {ok: true, languages, analysis, version: VERSION, sessions: total,
+                runs: queue.running, queued: queue.queued,
+                versions: Object.fromEntries(languages.map((lang) => [lang, all[lang] || ''])), compilers, compat: COMPAT,
+                analysisConnections: analysisTotal}
+                : {ok: true, languages, analysis}));
             return;
         }
         if (req.method === 'POST' && req.url === '/deploy') {
@@ -187,11 +263,13 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
     const wss = new WebSocketServer({noServer: true, maxPayload: 512 * 1024});
 
     server.on('upgrade', (req, socket, head) => {
+        // A client that drops the connection while it is refused must not end the server with an unhandled error.
+        socket.on('error', () => null);
         const refuse = (code, text) => {
             socket.end(`HTTP/1.1 ${code} ${text}\r\nConnection: close\r\n\r\n`);
         };
         const url = new URL(req.url, 'http://localhost');
-        if (url.pathname !== '/session') {
+        if (url.pathname !== '/session' && !(url.pathname === '/analysis' && theAnalyzer.available())) {
             return refuse(404, 'Not Found');
         }
         const payload = checker.check(url.searchParams.get('token'));
@@ -201,6 +279,13 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
         const site = String(payload.s || '');
         if (!originAllowed(site, req.headers.origin || '')) {
             return refuse(403, 'Forbidden');
+        }
+        if (url.pathname === '/analysis') {
+            return openAnalysis(req, socket, head, payload, refuse);
+        }
+        if (payload.p === 'analysis') {
+            // A token for the language service does not run programs.
+            return refuse(401, 'Unauthorized');
         }
         const auth = authorize ? authorize({type: 'session', site, activeSiteSessions: siteOpen.get(site) || 0}) : {ok: true};
         if (!auth.ok && auth.code === 429) {

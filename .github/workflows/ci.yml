@@ -37,3 +37,28 @@ jobs:
         env:
           CODELAB_MYSQL_PASSWORD: ci-password-of-the-runner
         run: npm test
+
+  # The C# language service (roslyn/): built with .NET 8 and tested in the bubblewrap sandbox, as on the server.
+  roslyn:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Bubblewrap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: npm ci
+      - name: Build the analyzer
+        run: dotnet publish roslyn -c Release -o roslyn/publish
+      - name: Tests of the analyzer
+        env:
+          DOTNET_ROOT: ${{ env.DOTNET_ROOT }}
+        run: node --test test/roslyn.test.mjs test/analysis.test.mjs
