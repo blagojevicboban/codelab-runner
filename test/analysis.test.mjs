@@ -17,6 +17,7 @@ import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {WebSocket as WsClient} from 'ws';
 import {Analyzer, CODE_MAX, cleanRequest} from '../lib/analysis.js';
+import {ClangdService} from '../lib/clangd.js';
 import {startServer} from '../server.js';
 import {sign} from '../lib/token.js';
 
@@ -158,7 +159,8 @@ test('/analysis allows at most four connections of a user', async() => {
 test('a server without the analyzer refuses /analysis and keeps running', async() => {
     const before = process.env.CODELAB_ROSLYN;
     process.env.CODELAB_ROSLYN = 'off';
-    const plain = await startServer({port: 0, host: '127.0.0.1', secret: SECRET, javaAnalyzer: new Analyzer({dll: ''})});
+    const plain = await startServer({port: 0, host: '127.0.0.1', secret: SECRET, javaAnalyzer: new Analyzer({dll: ''}),
+        clangd: new ClangdService({clangd: ''})});
     process.env.CODELAB_ROSLYN = before ?? '';
     if (before === undefined) {
         delete process.env.CODELAB_ROSLYN;

@@ -51,7 +51,7 @@ Query OK, errors with their line). The database is dropped at the end. Create th
 `sudo bash deploy/mariadb-admin.sh <password>` and set `CODELAB_MYSQL_USER=codelab_admin`, `CODELAB_MYSQL_PASSWORD`
 and `CODELAB_MYSQL_SOCKET` (default `/run/mysqld/mysqld.sock`). Without them SQL is not offered.
 
-## Language services: C# (Roslyn) and Java
+## Language services: C# (Roslyn), Java, C and C++ (clangd)
 
 With the .NET 8 runtime on the server and the analyzer in `roslyn/` published, the runner also answers the C# editors
 of tiny_codelab 1.26 or newer while the reader types: completions of the real members of every type, the signatures of a
@@ -79,7 +79,22 @@ source) and runs it in bubblewrap like the C# analyzer. The tooltips show the Ja
 sudo apt-get install --no-install-recommends openjdk-21-source
 ```
 
-`GET /health` lists `analysis: ["csharp", "java"]` for the services that are there. Allow about 1 GB more in `MemoryMax` of the
+The C and C++ service (runner 0.24.0, tiny_codelab 1.28 or newer) is one `clangd` (LLVM 18 on Ubuntu 24.04) for every
+reader, spoken to over the Language Server Protocol by `lib/clangd.js` and answering like the other services. It checks
+the program with the standard and the compiler profile of the example (`std` and `compiler` of the request, the same white
+lists as for runs, so `-std=c99` to `c23` and `c++11` to `c++23`, and the Visual Studio headers of the `msvc` profile for
+`conio.h` and `scanf_s`), with the other `.c`/`.h`/`.cpp` files of the example next to it for `#include "..."`. clangd keeps
+the parsed headers of an open file, so the runner keeps up to `CODELAB_CLANGD_SLOTS` programs open (each a folder with
+`compile_flags.txt` in the temporary folder, read-only in the sandbox): after the first request (about 1 s for
+`<bits/stdc++.h>`) the answers take tens of milliseconds. clangd runs in bubblewrap like the other analyzers, uses about
+100 to 300 MB per open program, and stops after `CODELAB_CLANGD_IDLE_MIN` minutes without requests. Its messages are in
+English; the tooltips show the comments of the glibc and libstdc++ headers.
+
+```sh
+sudo apt-get install --no-install-recommends clangd
+```
+
+`GET /health` lists `analysis: ["csharp", "java", "c", "cpp"]` for the services that are there. Allow about 1 GB more in `MemoryMax` of the
 systemd unit (the heap of the analyzer is `CODELAB_ROSLYN_HEAP_MB`). Without the analyzer, or with
 `CODELAB_ROSLYN=off`, the editors keep their built-in typing help.
 
@@ -266,6 +281,9 @@ git config gpg.format ssh && git config gpg.ssh.allowedSignersFile ~/.config/git
 | `CODELAB_ROSLYN_SANDBOX` | 1 | 0: start the analyzer without bubblewrap (development) |
 | `CODELAB_JAVA_ANALYZER` | on when `javac` is there | `off` turns the Java service off |
 | `CODELAB_JAVA_ANALYZER_HEAP_MB`, `CODELAB_JAVA_ANALYZER_TIMEOUT` | 384, 10 | heap of the Java analyzer, seconds a request waits |
+| `CODELAB_CLANGD` | `clangd` (or `clangd-18`) on the PATH | the C and C++ service, or `off` |
+| `CODELAB_CLANGD_SLOTS`, `CODELAB_CLANGD_TIMEOUT` | 6, 10 | programs kept open by clangd, seconds a request waits |
+| `CODELAB_CLANGD_IDLE_MIN`, `CODELAB_CLANGD_SANDBOX` | 30, 1 | minutes without requests before clangd stops; 0: without bubblewrap |
 | `CODELAB_MAX_ANALYSIS`, `CODELAB_USER_ANALYSIS` | 200, 4 | connections of the language services on the server and of one user |
 
 Each open session is one compiled program and one process (a JVM for Java, Mono for C#). 30 students at once need about
@@ -284,8 +302,8 @@ vars}]}` (the student's frames, innermost first),
 `{type: "exit", status, code, signal}` (status `ok`, `runtime`, `time`,
 `memory`, `toolong` or `stopped`), `{type: "error", message}` (with `reason` when a hook refused the session).
 
-The language services (`/analysis`, token with `l` csharp or java): the client sends `{id, op, code, files: [{name, code}], line, column, item,
-culture}` with `op` one of `complete`, `describe`, `signatures`, `hover` and `diagnostics` (line and column 1-based), at
+The language services (`/analysis`, token with `l` csharp, java, c or cpp): the client sends `{id, op, code, files: [{name, code}], line, column, item,
+culture}` (C and C++ also `std` and `compiler`) with `op` one of `complete`, `describe`, `signatures`, `hover` and `diagnostics` (line and column 1-based), at
 most 20 a second, and gets `{id, items}`, `{id, text}`, `{id, signatures, active, parameter}`,
 `{id, markdown, line, column, endLine, endColumn}` or `{id, items: [{file, severity, code, message, line, column, endLine,
 endColumn}]}`; `{id, error}` or `{id, busy: true}` when there is no answer.

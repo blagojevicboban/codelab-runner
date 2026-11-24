@@ -36,6 +36,7 @@ import {COMPAT, runBatch, signedRequest} from './lib/batch.js';
 import {handleDeploy} from './lib/deploy.js';
 import {clientError, logError} from './lib/errors.js';
 import {Analyzer, cleanRequest, javaAnalyzer} from './lib/analysis.js';
+import {ClangdService} from './lib/clangd.js';
 
 /** Version of the runner (package.json). */
 /** Largest body of a run for grading (program and input), CODELAB_RUN_BODY_MB. */
@@ -70,10 +71,11 @@ export const isMain = (moduleUrl, scriptPath) => Boolean(scriptPath) && moduleUr
  * @param {function(import('node:http').IncomingMessage, import('node:http').ServerResponse, {secrets: Object}): boolean} [options.onRequest] extra HTTP routes
  * @param {Analyzer} [options.analyzer] the C# language service (default: the Roslyn analyzer of this server, if published)
  * @param {Analyzer} [options.javaAnalyzer] the Java language service (default: built from java-analyzer/ when javac is there)
+ * @param {ClangdService} [options.clangd] the C and C++ language service (default: clangd of this server, when installed)
  * @returns {Promise<import('node:http').Server>}
  */
 export const startServer = ({port, host, secret, secrets, exit = () => process.exit(75),
-    secretsResolver, allowOrigin, authorize, onRun, onRequest, analyzer, javaAnalyzer: java} = {}) => {
+    secretsResolver, allowOrigin, authorize, onRun, onRequest, analyzer, javaAnalyzer: java, clangd} = {}) => {
     const theSecrets = secretsResolver ?? new Secrets(secret ?? process.env.CODELAB_SECRET, secrets ?? process.env.CODELAB_SECRETS);
     const checker = new TokenChecker(theSecrets);
     const runNonces = new NonceList();
@@ -89,10 +91,11 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
     /** @type {Map<string, number>} open sessions by site */
     const siteOpen = new Map();
     let total = 0;
-    // The language services of C# and Java (lib/analysis.js): their connections are not sessions, run nothing and use
+    // The language services of C#, Java (lib/analysis.js), C and C++ (lib/clangd.js, one clangd for both): their connections are not sessions, run nothing and use
     // no quota.
     /** @type {Object<string, Analyzer>} the language services by language */
-    const analyzers = {csharp: analyzer ?? new Analyzer(), java: java ?? javaAnalyzer()};
+    const cfamily = clangd ?? new ClangdService();
+    const analyzers = {csharp: analyzer ?? new Analyzer(), java: java ?? javaAnalyzer(), c: cfamily, cpp: cfamily};
     const anyAnalyzer = () => Object.values(analyzers).some((a) => a.available());
     const maxAnalysis = Number(process.env.CODELAB_MAX_ANALYSIS || 200);
     const userAnalysis = Number(process.env.CODELAB_USER_ANALYSIS || 4);
@@ -101,7 +104,7 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
     let analysisTotal = 0;
 
     /**
-     * A connection of a language service: a token with p = analysis and l = csharp or java, at most userAnalysis per
+     * A connection of a language service: a token with p = analysis and l = csharp, java, c or cpp, at most userAnalysis per
      * user, requests of at most 20 a second, closed after 30 minutes without one.
      */
     const openAnalysis = (req, socket, head, payload, refuse) => {
@@ -152,7 +155,7 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
                 if (!request) {
                     return send({error: 'request'});
                 }
-                const answer = await theAnalyzer.ask(request);
+                const answer = await theAnalyzer.ask(request, payload.l);
                 return send(answer ?? {error: 'analyzer'});
             });
             ws.on('close', () => {
