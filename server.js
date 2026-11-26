@@ -38,6 +38,7 @@ import {clientError, logError} from './lib/errors.js';
 import {Analyzer, cleanRequest, javaAnalyzer} from './lib/analysis.js';
 import {ClangdService} from './lib/clangd.js';
 import {ensureNetcoredbg} from './lib/dotnet.js';
+import {buildJavaDebugger} from './lib/javadebug.js';
 
 /** Version of the runner (package.json). */
 /** Largest body of a run for grading (program and input), CODELAB_RUN_BODY_MB. */
@@ -377,4 +378,6 @@ if (isMain(import.meta.url, process.argv[1])) {
     process.stdout.write(`CodeLab runner on ${address}:${port}\n`);
     // Step for C#: the debugger is fetched once when .NET is there and it is not (C# runs without Step meanwhile).
     ensureNetcoredbg((message) => process.stdout.write(`${message}\n`));
+    // Step for Java: the debugger is built by javac now, so the first Step does not wait for it.
+    buildJavaDebugger();
 }

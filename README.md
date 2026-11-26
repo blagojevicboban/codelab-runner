@@ -3,7 +3,8 @@
 The interactive server of the CodeLab plugins for Moodle ([tiny_codelab](https://github.com/blagojevicboban/moodle-tiny_codelab),
 filter_codelab, qtype_codelab). It keeps a student's **C, C++, Java or C#** program running while the student types its
 input in the browser console, as in a terminal: prompts appear before the input, and a program can read until the end
-of the input (Ctrl+D). C and C++ programs can also run **step by step** under gdb, and C# programs under netcoredbg:
+of the input (Ctrl+D). C and C++ programs can also run **step by step** under gdb, C# programs under netcoredbg and
+Java programs under the runner's own JDI debugger:
 the browser marks the line that runs next and shows the variables of the function.
 
 It also runs programs interactively and for grading (`POST /run`, below) across **26 server languages**: C, C++, Java,
@@ -322,6 +323,14 @@ so the runner reads their contents: arrays and lists `{3, 1, 2}`, two-dimensiona
 dictionaries `{["Ana"] = 16}`, sets and objects `{Value = 1, Next = {Node}}` (lib/csvalues.js). An unhandled exception
 ends the run with its message, as without Step. .NET limits its heap by `DOTNET_GCHeapHardLimit` (256 MB) instead of
 the address space limit, which its runtime does not survive. `CODELAB_NETCOREDBG` names another netcoredbg folder.
+
+Java in step mode is compiled with `javac -g` and runs under `java-debugger/JavaDebugger.java`, a debugger on the Java
+Debug Interface of the JDK (module `jdk.jdi`, in `openjdk-21-jdk-headless`) that speaks the same part of gdb's machine
+interface. The runner builds it with javac at start (into the temporary folder, named by the hash of its source) and
+runs it in the sandbox; it launches the program's JVM suspended with the FIFOs of the session. Steps stay in the
+program's own classes, values are shown as for C# (collections and maps through their own methods, other JDK classes
+by their name), and conditions and watches are small Java expressions (variables, fields, array elements, method
+calls, arithmetic, comparisons, logic). `CODELAB_JAVA_DEBUG=off` turns Step for Java off.
 
 ## Tests
 
