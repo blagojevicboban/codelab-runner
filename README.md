@@ -3,8 +3,8 @@
 The interactive server of the CodeLab plugins for Moodle ([tiny_codelab](https://github.com/blagojevicboban/moodle-tiny_codelab),
 filter_codelab, qtype_codelab). It keeps a student's **C, C++, Java or C#** program running while the student types its
 input in the browser console, as in a terminal: prompts appear before the input, and a program can read until the end
-of the input (Ctrl+D). C and C++ programs can also run **step by step** under gdb: the browser marks the line that runs
-next and shows the variables of the function.
+of the input (Ctrl+D). C and C++ programs can also run **step by step** under gdb, and C# programs under netcoredbg:
+the browser marks the line that runs next and shows the variables of the function.
 
 It also runs programs interactively and for grading (`POST /run`, below) across **26 server languages**: C, C++, Java,
 C#, **Python, JavaScript, TypeScript, Pascal, PHP, Bash, Go, Rust, R, Ruby, Lua, Kotlin, Perl, Octave, Julia, Scheme,
@@ -35,6 +35,9 @@ messages).
 - Node.js 20 or newer
 - `bubblewrap`, `build-essential`, `openjdk-21-jdk-headless`, `mono-mcs` (the versions of Jobe on Ubuntu 24.04:
   gcc 13.3, Java 21, Mono 6.8), and `gdb` for step by step
+- For step by step in C#: the .NET SDK (`dotnet-sdk-8.0`, also used by the C# language service) and netcoredbg, which
+  `bash deploy/netcoredbg.sh` downloads into `netcoredbg/` of the runner (a fixed version checked by its SHA-256; the
+  deploy does it by itself). `GET /health` lists the languages with step by step in `debug`.
 
 ```sh
 sudo apt-get install bubblewrap build-essential openjdk-21-jdk-headless mono-mcs gdb mariadb-server
@@ -311,6 +314,14 @@ endColumn}]}`; `{id, error}` or `{id, busy: true}` when there is no answer.
 In step mode the program is compiled with `-g -O0` and runs under `gdb --interpreter=mi3`; its input and output go
 through FIFOs in its folder. A step that goes into the C library (printf, scanf) returns to the student's code at once,
 so only the student's lines are shown. `CODELAB_DEBUG_MI=1` prints gdb's machine interface on the server's stderr.
+
+C# in step mode is compiled by the Roslyn compiler of the .NET SDK (`csc.dll`, portable debugging information) and runs
+on .NET under `netcoredbg --interpreter=mi` (Samsung, MIT licence), which speaks the same machine interface; Run and
+grading stay on Mono. Just My Code keeps the steps in the student's code. netcoredbg shows objects by their type only,
+so the runner reads their contents: arrays and lists `{3, 1, 2}`, two-dimensional arrays `{{1, 2}, {3, 4}}`,
+dictionaries `{["Ana"] = 16}`, sets and objects `{Value = 1, Next = {Node}}` (lib/csvalues.js). An unhandled exception
+ends the run with its message, as without Step. .NET limits its heap by `DOTNET_GCHeapHardLimit` (256 MB) instead of
+the address space limit, which its runtime does not survive. `CODELAB_NETCOREDBG` names another netcoredbg folder.
 
 ## Tests
 

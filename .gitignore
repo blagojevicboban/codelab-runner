@@ -2,3 +2,4 @@ node_modules/
 roslyn/bin/
 roslyn/obj/
 roslyn/publish/
+netcoredbg/

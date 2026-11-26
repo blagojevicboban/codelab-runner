@@ -27,7 +27,7 @@ import {readFileSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {pathToFileURL} from 'node:url';
 import {WebSocketServer} from 'ws';
-import {LANGUAGES, languageAvailable, languageVersions} from './lib/sandbox.js';
+import {LANGUAGES, debuggerAvailable, languageAvailable, languageVersions} from './lib/sandbox.js';
 import {mysqlConfigured} from './lib/mysql.js';
 import {Session} from './lib/session.js';
 import {NonceList, Secrets, TokenChecker} from './lib/token.js';
@@ -37,6 +37,7 @@ import {handleDeploy} from './lib/deploy.js';
 import {clientError, logError} from './lib/errors.js';
 import {Analyzer, cleanRequest, javaAnalyzer} from './lib/analysis.js';
 import {ClangdService} from './lib/clangd.js';
+import {ensureNetcoredbg} from './lib/dotnet.js';
 
 /** Version of the runner (package.json). */
 /** Largest body of a run for grading (program and input), CODELAB_RUN_BODY_MB. */
@@ -181,11 +182,13 @@ export const startServer = ({port, host, secret, secrets, exit = () => process.e
             );
             res.writeHead(200, {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'});
             const analysis = Object.keys(analyzers).filter((lang) => analyzers[lang].available() && languages.includes(lang));
-            res.end(JSON.stringify(signed ? {ok: true, languages, analysis, version: VERSION, sessions: total,
+            // Languages with Step (C# only when the server has .NET and netcoredbg).
+            const debug = languages.filter(debuggerAvailable);
+            res.end(JSON.stringify(signed ? {ok: true, languages, analysis, debug, version: VERSION, sessions: total,
                 runs: queue.running, queued: queue.queued,
                 versions: Object.fromEntries(languages.map((lang) => [lang, all[lang] || ''])), compilers, compat: COMPAT,
                 analysisConnections: analysisTotal}
-                : {ok: true, languages, analysis}));
+                : {ok: true, languages, analysis, debug}));
             return;
         }
         if (req.method === 'POST' && req.url === '/deploy') {
@@ -372,4 +375,6 @@ if (isMain(import.meta.url, process.argv[1])) {
     const server = await startServer();
     const {address, port} = server.address();
     process.stdout.write(`CodeLab runner on ${address}:${port}\n`);
+    // Step for C#: the debugger is fetched once when .NET is there and it is not (C# runs without Step meanwhile).
+    ensureNetcoredbg((message) => process.stdout.write(`${message}\n`));
 }
