@@ -39,6 +39,7 @@ test('NodeDebugger MI protocol: Step, frames, variables, Watch and exit', {skip:
         const proc = spawn(process.execPath, [NODE_DBG, script, dir, '128'], {stdio: ['pipe', 'pipe', 'pipe']});
         // Open FIFO peers so NodeDebugger does not block opening FIFOs.
         const outReader = spawn('cat', [join(dir, 'out.fifo')]);
+        const outClosed = new Promise((r) => outReader.once('close', r));
         const errReader = spawn('cat', [join(dir, 'err.fifo')]);
         const inWriter = spawn('sh', ['-c', `exec cat > "${join(dir, 'in.fifo')}"`], {stdio: ['pipe', 'ignore', 'ignore']});
         let stdoutText = '';
@@ -92,7 +93,7 @@ test('NodeDebugger MI protocol: Step, frames, variables, Watch and exit', {skip:
         proc.stdin.write('8-exec-continue\n');
         await waitFor((l) => l.startsWith('*stopped,reason="exited"'));
         inWriter.stdin.end();
-        await new Promise((r) => outReader.on('close', r));
+        await outClosed;
         errReader.kill();
         assert.equal(stdoutText.trim(), '7');
     } finally {
@@ -114,6 +115,7 @@ test('NodeDebugger MI protocol: TypeScript (.ts) Step, variables and exit', {ski
         }
         proc = spawn(process.execPath, [NODE_DBG, script, dir, '128'], {stdio: ['pipe', 'pipe', 'pipe']});
         outReader = spawn('cat', [join(dir, 'out.fifo')]);
+        const outClosed = new Promise((r) => outReader.once('close', r));
         errReader = spawn('cat', [join(dir, 'err.fifo')]);
         inWriter = spawn('sh', ['-c', `exec cat > "${join(dir, 'in.fifo')}"`], {stdio: ['pipe', 'ignore', 'ignore']});
         let stdoutText = '';
@@ -158,7 +160,7 @@ test('NodeDebugger MI protocol: TypeScript (.ts) Step, variables and exit', {ski
         proc.stdin.write('6-exec-continue\n');
         await waitFor((l) => l.startsWith('*stopped,reason="exited"'));
         inWriter.stdin.end();
-        await new Promise((r) => outReader.on('close', r));
+        await outClosed;
         errReader.kill();
         assert.equal(stdoutText.trim(), '42');
     } finally {
