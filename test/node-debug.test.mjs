@@ -100,6 +100,76 @@ test('NodeDebugger MI protocol: Step, frames, variables, Watch and exit', {skip:
     }
 });
 
+test('NodeDebugger MI protocol: TypeScript (.ts) Step, variables and exit', {skip: directSkip}, async() => {
+    const dir = mkdtempSync(join(tmpdir(), 'codelab-tsdbg-'));
+    let proc;
+    let outReader;
+    let errReader;
+    let inWriter;
+    try {
+        const script = join(dir, 'prog.ts');
+        writeFileSync(script, 'function mul(x: number, y: number): number {\n    const p: number = x * y;\n    return p;\n}\nconst ans: number = mul(6, 7);\nconsole.log(ans);\n');
+        for (const f of ['in.fifo', 'out.fifo', 'err.fifo']) {
+            spawnSync('mkfifo', ['-m', '600', join(dir, f)]);
+        }
+        proc = spawn(process.execPath, [NODE_DBG, script, dir, '128'], {stdio: ['pipe', 'pipe', 'pipe']});
+        outReader = spawn('cat', [join(dir, 'out.fifo')]);
+        errReader = spawn('cat', [join(dir, 'err.fifo')]);
+        inWriter = spawn('sh', ['-c', `exec cat > "${join(dir, 'in.fifo')}"`], {stdio: ['pipe', 'ignore', 'ignore']});
+        let stdoutText = '';
+        outReader.stdout.on('data', (d) => { stdoutText += d.toString('utf8'); });
+
+        const lines = [];
+        const waiters = [];
+        createInterface({input: proc.stdout}).on('line', (line) => {
+            lines.push(line);
+            for (let i = waiters.length - 1; i >= 0; i--) {
+                if (waiters[i].pred(line)) {
+                    const w = waiters.splice(i, 1)[0];
+                    w.resolve(line);
+                }
+            }
+        });
+        const waitFor = (pred) => new Promise((resolve, reject) => {
+            const hit = lines.find(pred);
+            if (hit) {
+                resolve(hit);
+                return;
+            }
+            const timer = setTimeout(() => reject(new Error(`Timeout waiting for TS MI line. Got:\n${lines.join('\n')}`)), 8000);
+            waiters.push({pred, resolve: (l) => { clearTimeout(timer); resolve(l); }});
+        });
+
+        proc.stdin.write('1-break-insert -t main\n');
+        await waitFor((l) => l.startsWith('1^done'));
+        proc.stdin.write(`2-break-insert ${script}:3\n`);
+        await waitFor((l) => l.startsWith('2^done'));
+        proc.stdin.write('3-exec-run\n');
+        await waitFor((l) => l.startsWith('*stopped') && l.includes('line="5"'));
+
+        proc.stdin.write('4-exec-continue\n');
+        const bpStop = await waitFor((l) => l.startsWith('*stopped') && l.includes('line="3"'));
+        assert.match(bpStop, /func="mul"/);
+
+        proc.stdin.write('5-stack-list-variables --thread 1 --frame 0 --all-values\n');
+        const vars = await waitFor((l) => l.startsWith('5^done'));
+        assert.match(vars, /name="p",value="42"/);
+
+        proc.stdin.write('6-exec-continue\n');
+        await waitFor((l) => l.startsWith('*stopped,reason="exited"'));
+        inWriter.stdin.end();
+        await new Promise((r) => outReader.on('close', r));
+        errReader.kill();
+        assert.equal(stdoutText.trim(), '42');
+    } finally {
+        proc.kill();
+        outReader.kill();
+        errReader.kill();
+        inWriter.kill();
+        rmSync(dir, {recursive: true, force: true});
+    }
+});
+
 const WebSocket = globalThis.WebSocket ?? WsClient;
 const SECRET = 'test-secret-of-sixteen-or-more';
 const hasBwrap = spawnSync('bwrap', ['--version'], {stdio: 'ignore'}).status === 0;

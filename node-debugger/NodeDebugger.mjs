@@ -44,6 +44,7 @@ const breakpoints = new Map();
 let nextBp = 1;
 let stopAtMain = false;
 let runRequested = false;
+let pausedOnce = false;
 let initialPause = null;
 let callFrames = [];
 let ended = false;
@@ -68,7 +69,7 @@ const fileUrlToPath = (url) => {
     return url;
 };
 
-const isUserPath = (p) => p.startsWith(`${boxDir}/`) && p.endsWith('.js');
+const isUserPath = (p) => p.startsWith(`${boxDir}/`) && /\.(?:js|ts)$/.test(p);
 
 const userFrames = () => callFrames
     .map((f) => {
@@ -153,6 +154,7 @@ const handlePaused = async(params) => {
         cdp('Debugger.resume').catch(() => undefined);
         return;
     }
+    pausedOnce = true;
     if (!runRequested) {
         initialPause = frames[0];
         return;
@@ -246,7 +248,7 @@ const handleCommand = async(line) => {
             const id = nextBp++;
             const res = await cdp('Debugger.setBreakpointByUrl', {
                 lineNumber: lineNum - 1,
-                url: `file://${file}`,
+                urlRegex: `(?:file://)?${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
                 ...(condition ? {condition} : {}),
             });
             breakpoints.set(id, res.breakpointId);
@@ -269,13 +271,13 @@ const handleCommand = async(line) => {
             runRequested = true;
             emit(`${token}^running`);
             const waitStart = Date.now();
-            while (!initialPause && !ended && Date.now() - waitStart < 5000) {
+            while (!pausedOnce && !ended && Date.now() - waitStart < 5000) {
                 await new Promise((r) => setTimeout(r, 15));
             }
-            if (ended) {
+            if (ended || !initialPause) {
                 return;
             }
-            if (stopAtMain && initialPause) {
+            if (stopAtMain) {
                 const f = initialPause;
                 initialPause = null;
                 emitStopped('breakpoint-hit', f);
@@ -371,8 +373,11 @@ const handleCommand = async(line) => {
     }
 };
 
-// Launch the student's script under Node's built-in inspector.
+// Launch the student's script under Node's built-in inspector (with native TS stripping for .ts).
+const tsFlags = scriptPath.endsWith('.ts')
+    ? ['--experimental-strip-types', '--no-warnings', '--disable-wasm-trap-handler'] : [];
 const child = spawn(process.execPath, [
+    ...tsFlags,
     `--max-old-space-size=${heapMb}`,
     '--inspect-brk=127.0.0.1:0',
     scriptPath,
